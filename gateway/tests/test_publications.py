@@ -1,4 +1,5 @@
 import tempfile, unittest
+from unittest.mock import patch
 from gateway.store import Store
 from gateway.tree import Conflict, InvalidGedcom
 from gateway.tests.test_tree import FIXTURE
@@ -39,3 +40,15 @@ class PublicationTest(unittest.TestCase):
             self.store.commit(revision,'change-'+str(number),[{'op':'person','xref':'I1','name':str(number)+' /Name/'}],lambda *_:None)
         with self.assertRaises(Conflict):self.store.publish(self.store.revision)
         with self.store.connection() as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM publications').fetchone()[0],10)
+
+class BootstrapRecoveryTest(unittest.TestCase):
+    def test_interrupted_initialization_recovers_without_losing_the_tree(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store=Store(folder)
+            with patch.object(store,'atomic',side_effect=OSError('interrupted')):
+                with self.assertRaises(OSError):store.initialize(FIXTURE)
+            recovered=Store(folder)
+            self.assertTrue(recovered.file.exists())
+            self.assertEqual(recovered.status()['projection'],'pending')
+            recovered.retry(lambda *_: None)
+            self.assertEqual(recovered.status()['projection'],'ready')

@@ -69,17 +69,19 @@ class Store:
             if self.file.exists():
                 raise Conflict("Canonical GEDCOM already exists")
             data = tree.dump()
-            self.atomic(data)
-            revision = self.revision
+            revision = hashlib.sha256(data).hexdigest()
             with self.connection() as db:
                 db.execute("INSERT INTO commits VALUES(?,?,?,?,?,?,?)",
-                           ("bootstrap-" + revision, revision, revision, "[]", data, "pending", ""))
+                           ("bootstrap-" + revision, None, revision, "[]", data, "prepared", ""))
+            self.atomic(data)
+            with self.connection() as db:
+                db.execute("UPDATE commits SET projection='pending' WHERE key=?", ("bootstrap-" + revision,))
 
     def recover(self):
         with self.serialized(), self.connection() as db:
             rows = db.execute("SELECT * FROM commits WHERE projection='prepared' ORDER BY rowid").fetchall()
             for row in rows:
-                rev = self.revision
+                rev = self.revision if self.file.exists() else None
                 if rev == row["before_rev"]:
                     self.atomic(row["candidate"])
                 elif rev != row["revision"]:
