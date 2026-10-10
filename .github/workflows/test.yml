@@ -1,29 +1,56 @@
-name: Unit test
-
+name: Verify and package on Red
 on:
-  push:
-    branches:
-      - main
   pull_request:
+  push:
+    branches: [production]
   workflow_dispatch:
-
+permissions:
+  contents: read
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  verify:
+    runs-on: ${{ vars.CI_RUNS_ON || 'arc-prod-adler-gramps-web' }}
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Check persistent cache contract
+        run: arc-cache check-workflow --file .github/workflows/test.yml --job "$GITHUB_JOB"
       - uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: '22'
+          package-manager-cache: false
       - name: Install
-        run: npm ci
-      - name: ESLint
-        run: npm run lint:eslint
-      - name: Prettier
-        run: npm run lint:prettier
-      - name: Build
-        run: npm run build
-      - name: Type check
-        run: npm run typecheck
-      - name: Unit tests
-        run: npm test
+        env:
+          HUSKY_SKIP_HOOKS: '1'
+        run: npm ci --no-audit --no-fund
+      - name: Verify
+        run: |
+          npm run lint
+          npm run build
+          npm run typecheck
+          npm test -- --maxWorkers=1
+          python3 -B -m unittest discover -s gateway/tests -v
+      - name: Install pinned OCI client
+        run: |
+          mkdir -p "$RUNNER_TEMP/oci-tools"
+          curl -fsSL --retry 2 https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_x86_64.tar.gz | tar xz -C "$RUNNER_TEMP/oci-tools" crane
+          echo "$RUNNER_TEMP/oci-tools" >> "$GITHUB_PATH"
+      - name: Assemble image from stable API
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          arc-cache oci-pull --image dmstraub/gramps-webapi@sha256:c11888a3cd4f8b4681bec6fba0d971df2b2310dbdd07fef1b4780e9e73b52fba --platform linux/amd64 --output "$RUNNER_TEMP/image" --crane crane
+          python3 ops/compose_oci.py "$RUNNER_TEMP/image" dist gateway
+      - name: Push immutable image
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          export DOCKER_CONFIG="$RUNNER_TEMP/registry-auth"
+          printf '%s' "$GHCR_TOKEN" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
+          crane push "$RUNNER_TEMP/image" "ghcr.io/krotname/gramps-web:sha-$SOURCE_SHA"

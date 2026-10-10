@@ -45,6 +45,7 @@ import {
   LOADING_STATE_READY,
   selectPreReadyView,
 } from './routing.js'
+import './components/GrampsjsMasterEditor.js'
 import './components/GrampsjsAppBar.js'
 import './components/GrampsjsDnaTabBar.js'
 import './components/GrampsjsCreateTree.js'
@@ -326,6 +327,12 @@ export class GrampsJs extends LitElement {
 
   render() {
     return html`
+      ${this.loadingState === LOADING_STATE_READY &&
+      this.appState.frontendConfig?.gedcomMaster
+        ? html`<grampsjs-master-editor
+            .appState=${this.appState}
+          ></grampsjs-master-editor>`
+        : html``}
       ${this.renderContent()} ${this._renderKeyboardShortcuts()}
       <mwc-snackbar id="app-snackbar" leading></mwc-snackbar>
       ${this._reindexNeeded ? this._renderReindexSnackbar() : ''}
@@ -766,7 +773,7 @@ export class GrampsJs extends LitElement {
 
     this._loadDbInfo()
 
-    const browserLang = getBrowserLanguage()
+    const browserLang = getTreeConfig().defaultLanguage || getBrowserLanguage()
     if (browserLang && !this.appState.settings.lang) {
       this.appState.updateSettings({lang: browserLang})
       this._loadFrontendStrings(browserLang)

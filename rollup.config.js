@@ -61,7 +61,7 @@ export default {
     }),
     resolve(),
     typescript({outDir: outputDir, declaration: false}),
-    !developmentMode && terser({format: {comments: false}}),
+    !developmentMode && terser({maxWorkers: 1, format: {comments: false}}),
     polyfillsLoader({polyfills: {}, minify: !developmentMode}),
     copy({
       targets: [

@@ -1,1 +1,1 @@
-window.grampsjsConfig = {}
+window.grampsjsConfig = {gedcomMaster: true, defaultLanguage: 'ru'}

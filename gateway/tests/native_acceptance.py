@@ -1,0 +1,70 @@
+"""Acceptance against the pinned Gramps Web API image, with synthetic data only."""
+import io
+import json
+import os
+from pathlib import Path
+from urllib.error import HTTPError
+os.environ.pop("GRAMPS_API_CONFIG", None)
+os.environ["DISABLE_CACHES"] = "1"
+import tempfile
+fixture_root = tempfile.TemporaryDirectory(prefix="gateway-native-", dir="/work")
+base=Path(fixture_root.name)
+os.environ["GRAMPSHOME"]=str(base)
+os.environ["HOME"]=str(base)
+Path("/work/native").mkdir(parents=True, exist_ok=True)
+os.environ["GRAMPS_DATABASE_PATH"] = str(base/"grampsdb")
+Path(os.environ["GRAMPS_DATABASE_PATH"]).mkdir(parents=True, exist_ok=True)
+from gramps_webapi.app import create_app
+from gramps_webapi.auth import add_user, user_db
+from gramps_webapi.dbmanager import WebDbManager
+from gateway.tree import Gedcom, Conflict
+from gateway.store import Store
+from gateway.projection import objects, project, handle
+from gateway.tests.test_tree import FIXTURE
+
+config = dict(TREE="Synthetic gateway acceptance", SECRET_KEY="isolated-synthetic-fixture-key-at-least-32-bytes",
+    USER_DB_URI="sqlite:////work/native/users.sqlite", SEARCH_INDEX_DB_URI="sqlite:////work/native/search.sqlite",
+    MEDIA_BASE_DIR="/work/native/media", STATIC_PATH="/app/static", REGISTRATION_DISABLED=True,
+    REPORT_DIR="/work/native/reports", EXPORT_DIR="/work/native/exports", DISABLE_TELEMETRY=True,
+    REQUEST_CACHE_CONFIG={"CACHE_TYPE":"NullCache"}, THUMBNAIL_CACHE_CONFIG={"CACHE_TYPE":"NullCache"},
+    PERSISTENT_CACHE_CONFIG={"CACHE_TYPE":"NullCache"})
+config.update(USER_DB_URI="sqlite:///"+str(base/"users.sqlite"), SEARCH_INDEX_DB_URI="sqlite:///"+str(base/"search.sqlite"))
+app=create_app(config, config_from_env=False)
+tree_id=WebDbManager(name=config["TREE"]).dirname
+with app.app_context():
+    user_db.create_all()
+    add_user(name="owner", password="synthetic-fixture-password", role=4, tree=tree_id)
+client=app.test_client()
+login=client.post("/api/token/",json={"username":"owner","password":"synthetic-fixture-password"})
+assert login.status_code==200,login.get_data(as_text=True)
+auth={"Authorization":"Bearer "+login.json["access_token"]}
+class NativeAPI:
+    def request(self, method, path, data=None, headers=None):
+        response=client.open(path, method=method, json=data, headers={**auth,**(headers or {})})
+        if response.status_code>=400:
+            raise HTTPError(path,response.status_code,response.get_data(as_text=True),response.headers,io.BytesIO(response.data))
+        return response.json,dict(response.headers)
+api=NativeAPI()
+user,_=api.request("GET","/api/users/-/")
+assert user["role"]==4
+store=Store(base/"master")
+data=FIXTURE.replace(b"2 DATE ABT 1900",b"2 DATE ABT 1900\r\n2 PLAC Original city")
+store.initialize(data)
+callback=lambda tree,ops:project(api,store.folder,tree,ops)
+seed=store.retry(callback)
+assert seed["projection"]=="ready",seed
+family,_=api.request("GET","/api/families/"+handle("F1"))
+assert family["child_ref_list"][0]["frel"]==["Unknown",6] or "Unknown" in str(family["child_ref_list"][0]["frel"]),family["child_ref_list"]
+before=store.revision
+result=store.commit(before,"fixture-edit",[{"op":"person","xref":"I1","name":"Anne /New/","birth":{"date":"1899-03-14","place":"New city"},"append_notes":["Synthetic acceptance note"],"append_sources":["Synthetic source record"]}],callback)
+assert result["projection"]=="ready",result
+person,_=api.request("GET","/api/people/"+handle("I1"))
+assert person["primary_name"]["first_name"]=="Anne"
+assert person["primary_name"]["surname_list"][0]["surname"]=="New"
+event,_=api.request("GET","/api/events/"+handle("I1:event:BIRT:0"))
+assert event["date"]["dateval"][:3]==[14,3,1899],event["date"]
+try:store.commit(before,"stale", [{"op":"person","xref":"I1","sex":"F"}],callback)
+except Conflict:pass
+else:raise AssertionError("Stale revision accepted")
+assert len(client.get("/api/people/",headers=auth).json)==2
+print(json.dumps({"native_api":"passed","people":2,"stable_parentage":"Unknown","date":"1899-03-14","projection":"ready","stale_revision":"rejected"}))
