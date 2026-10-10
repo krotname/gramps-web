@@ -4,6 +4,13 @@ import en from '../../lang/en.json'
 import ru from '../../lang/ru.json'
 import {GrampsjsMasterEditor} from '../../src/components/GrampsjsMasterEditor.js'
 
+// happy-dom lacks the form internals used by Material controls.
+// Browser acceptance covers their behavior; these tests cover editor state.
+vi.mock('@material/web/textfield/outlined-text-field.js', () => ({}))
+vi.mock('@material/web/select/outlined-select.js', () => ({}))
+vi.mock('@material/web/select/select-option.js', () => ({}))
+vi.mock('@material/web/button/filled-button.js', () => ({}))
+
 function editor() {
   const e = new GrampsjsMasterEditor()
   e.appState = {i18n: {strings: en}}
