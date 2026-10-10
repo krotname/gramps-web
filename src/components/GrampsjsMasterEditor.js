@@ -157,8 +157,7 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       Object.values(family.parent_roles || {})
         .map(
           id =>
-            this.people.find(p => p.xref === id)?.name.replaceAll('/', '') ||
-            id,
+            this.people.find(p => p.xref === id)?.name.replaceAll('/', '') || id
         )
         .join(', ') || this._('Family without specified parents')
     )
@@ -191,23 +190,22 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
                     ><div slot="headline">
                       ${p.name.replaceAll('/', '')}
                     </div></md-select-option
-                  >`,
+                  >`
               )}
             </md-outlined-select></label
-          >`,
-      )}${
-        ids.length < limit
-          ? html`<label
-              >${this._('Add')}<md-outlined-select
-                .value=${''}
-                @change=${e => change(ids.length, e.target.value)}
+          >`
+      )}${ids.length < limit
+        ? html`<label
+            >${this._('Add')}<md-outlined-select
+              .value=${''}
+              @change=${e => change(ids.length, e.target.value)}
+            >
+              <md-select-option value=""
+                ><div slot="headline">
+                  ${this._('Choose a person')}
+                </div></md-select-option
               >
-                <md-select-option value=""
-                  ><div slot="headline">
-                    ${this._('Choose a person')}
-                  </div></md-select-option
-                >
-                ${this.people
+              ${this.people
                 .filter(p => !ids.includes(p.xref))
                 .map(
                   p =>
@@ -215,12 +213,11 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
                       ><div slot="headline">
                         ${p.name.replaceAll('/', '')}
                       </div></md-select-option
-                    >`,
+                    >`
                 )}
-              </md-outlined-select></label
-            >`
-          : ''
-      }
+            </md-outlined-select></label
+          >`
+        : ''}
     </div>`
   }
 
@@ -244,7 +241,7 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
         ${this.people
           .filter(
             p =>
-              p.xref === roles[role] || !Object.values(roles).includes(p.xref),
+              p.xref === roles[role] || !Object.values(roles).includes(p.xref)
           )
           .map(
             p =>
@@ -252,7 +249,7 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
                 ><div slot="headline">
                   ${p.name.replaceAll('/', '')}
                 </div></md-select-option
-              >`,
+              >`
           )}
       </md-outlined-select></label
     >`
@@ -302,7 +299,7 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
     }
     if (this.kind === 'family') {
       const roles = Object.fromEntries(
-        Object.entries(f.parent_roles || {}).filter(([, id]) => id),
+        Object.entries(f.parent_roles || {}).filter(([, id]) => id)
       )
       if (
         r.create ||
@@ -383,7 +380,7 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       await this.post('/api/master/publish/', {revision: this.status.revision})
       await this.refresh()
       this.message = this._(
-        'Revision queued for publication. Geni and book status is shown below.',
+        'Revision queued for publication. Geni and book status is shown below.'
       )
     } catch (e) {
       this.message = e.message
@@ -416,7 +413,7 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       <summary>${this._('Tree editor and family books')}</summary>
       <p>
         ${this._(
-          'The master format is GEDCOM 5.5.1. Changes are saved to the tree file.',
+          'The master format is GEDCOM 5.5.1. Changes are saved to the tree file.'
         )}
       </p>
       <div class="fields">
@@ -428,20 +425,27 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
               this.record = null
             }}
           >
-            <md-select-option value="person"><div slot="headline">${this._('Person')}</div></md-select-option>
-            <md-select-option value="family"><div slot="headline">${this._('Family')}</div></md-select-option>
+            <md-select-option value="person"><div slot="headline">${this._(
+              'Person'
+            )}</div></md-select-option>
+            <md-select-option value="family"><div slot="headline">${this._(
+              'Family'
+            )}</div></md-select-option>
           </md-outlined-select></label
         >
         <label
-          >${this._('Select')}<md-outlined-select @change=${e => this.load(e.target.value)}>
-            <md-select-option value=""><div slot="headline">${this._('Choose a record')}</div></md-select-option>
+          >${this._('Select')}<md-outlined-select @change=${e =>
+      this.load(e.target.value)}>
+            <md-select-option value=""><div slot="headline">${this._(
+              'Choose a record'
+            )}</div></md-select-option>
             ${(this.kind === 'person' ? this.people : this.families).map(
               p =>
                 html`<md-select-option value=${p.xref}
                   ><div slot="headline">
                     ${p.name?.replaceAll('/', '') || this.familyName(p)}
                   </div></md-select-option
-                >`,
+                >`
             )}
           </md-outlined-select></label
         >
@@ -453,17 +457,16 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
         this.record
           ? html`<form @submit=${this.save}>
               <div class="fields">
-                ${
-                this.kind === 'person'
+                ${this.kind === 'person'
                   ? html`${this.field('surname', 'Surname')}${this.field(
                         'given',
-                        'Given names',
+                        'Given names'
                       )}<label
                         >${this._('Sex')}<md-outlined-select
                           .value=${this.form.sex || 'U'}
                           @change=${e => {
-                          this.form = {...this.form, sex: e.target.value}
-                        }}
+                            this.form = {...this.form, sex: e.target.value}
+                          }}
                         >
                           <md-select-option value="U"
                             ><div slot="headline">
@@ -482,33 +485,32 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
                           >
                         </md-outlined-select></label
                       >${this.field('occupation', 'Occupation')}${[
-                      'birth',
-                      'death',
-                      'baptism',
-                      'burial',
-                    ].map(
-                      (key, i) =>
-                        html`${this.field(
-                          key + 'Date',
-                          this._(
-                            'Date of %s',
-                            this._(['Birth', 'Death', 'Baptism', 'Burial'][i]),
-                          ),
-                        )}${this.field(key + 'Place', 'Place')}`,
-                    )}`
+                        'birth',
+                        'death',
+                        'baptism',
+                        'burial',
+                      ].map(
+                        (key, i) =>
+                          html`${this.field(
+                            key + 'Date',
+                            this._(
+                              'Date of %s',
+                              this._(['Birth', 'Death', 'Baptism', 'Burial'][i])
+                            )
+                          )}${this.field(key + 'Place', 'Place')}`
+                      )}`
                   : html`${this.parent('HUSB', 'Father')}${this.parent(
                       'WIFE',
-                      'Mother',
-                    )}${this.members('children', 'Children')}`
-              }
+                      'Mother'
+                    )}${this.members('children', 'Children')}`}
                 <label
                   >${this._('Add a note')}<md-outlined-text-field
                     type="textarea"
                     rows="3"
                     .value=${this.form.note || ''}
                     @input=${e => {
-                    this.form = {...this.form, note: e.target.value}
-                  }}
+                      this.form = {...this.form, note: e.target.value}
+                    }}
                   ></md-outlined-text-field></label
                 >${this.field('source', 'Source or document reference')}
               </div>
@@ -549,9 +551,9 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
               ${this._(
                 'Books: %s. Geni: %s.',
                 this.stateLabel(p.books_state),
-                this.stateLabel(p.geni_state),
+                this.stateLabel(p.geni_state)
               )}
-            </p>`,
+            </p>`
         )}
       ${this.books.map(
         b =>
@@ -559,11 +561,11 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
             @click=${() =>
               this.download(
                 '/api/master/books/' + encodeURIComponent(b.file),
-                b.file,
+                b.file
               )}
           >
             ${b.title || b.file}
-          </md-filled-button>`,
+          </md-filled-button>`
       )}
     </details>`
   }

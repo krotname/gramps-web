@@ -89,7 +89,7 @@ describe('canonical tree editor', () => {
     e.status = {revision: 'old', projection: 'ready'}
     e.form.birthPlace = 'New city'
     vi.spyOn(e, 'post').mockRejectedValue(
-      new Error('The tree changed; reload before saving'),
+      new Error('The tree changed; reload before saving')
     )
     await e.save({preventDefault() {}})
     expect(e.form.birthPlace).to.equal('New city')
@@ -119,7 +119,7 @@ describe('canonical tree editor', () => {
     expect(e.appState.apiPost).toHaveBeenCalledWith(
       '/api/master/commit/',
       payload,
-      {dbChanged: false},
+      {dbChanged: false}
     )
   })
   it('can load again after a transient initial request failure', async () => {
