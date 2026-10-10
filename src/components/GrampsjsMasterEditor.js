@@ -1,7 +1,11 @@
 import {LitElement, css, html} from 'lit'
 import {GrampsjsAppStateMixin} from '../mixins/GrampsjsAppStateMixin.js'
-import {apiPutPostDelete, __APIHOST__} from '../api.js'
+import {__APIHOST__} from '../api.js'
 import {fireEvent} from '../util.js'
+import '@material/web/textfield/outlined-text-field.js'
+import '@material/web/select/outlined-select.js'
+import '@material/web/select/select-option.js'
+import '@material/web/button/filled-button.js'
 
 export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
   static get properties() {
@@ -45,30 +49,12 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
         gap: 4px;
         font-size: 14px;
       }
-      input,
-      select,
-      textarea {
-        font: inherit;
-        padding: 10px;
-        border: 1px solid #999;
-        border-radius: 6px;
-        background: var(--md-sys-color-surface, #fff);
-        color: inherit;
+      md-outlined-text-field,
+      md-outlined-select {
+        width: 100%;
       }
-      textarea {
-        min-height: 80px;
-      }
-      button {
-        padding: 10px 16px;
-        cursor: pointer;
-        border: 1px solid #888;
-        border-radius: 8px;
+      md-filled-button {
         margin: 8px 8px 8px 0;
-        font: inherit;
-      }
-      button:disabled {
-        cursor: wait;
-        opacity: 0.6;
       }
       .message {
         white-space: pre-wrap;
@@ -91,7 +77,6 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
 
   updated(changed) {
     if (changed.has('appState') && !this.loaded && this.appState.auth) {
-      this.loaded = true
       this.refresh()
     }
   }
@@ -103,13 +88,7 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
   }
 
   async post(route, payload) {
-    const r = await apiPutPostDelete(
-      this.appState.auth,
-      'POST',
-      route,
-      payload,
-      {dbChanged: false}
-    )
+    const r = await this.appState.apiPost(route, payload, {dbChanged: false})
     if (r.error) throw new Error(r.error)
     return r.data
   }
@@ -121,6 +100,7 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       this.families = await this.get('/api/master/families/')
       const b = await this.get('/api/master/books/')
       this.books = b.books || []
+      this.loaded = true
     } catch (e) {
       this.message = e.message
     }
@@ -163,13 +143,13 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
   }
 
   field(key, label) {
-    return html`<label
-      >${this._(label)}<input
-        .value=${this.form[key] || ''}
-        @input=${e => {
-          this.form = {...this.form, [key]: e.target.value}
-        }}
-    /></label>`
+    return html`<md-outlined-text-field
+      label=${this._(label)}
+      .value=${this.form[key] || ''}
+      @input=${e => {
+        this.form = {...this.form, [key]: e.target.value}
+      }}
+    ></md-outlined-text-field>`
   }
 
   familyName(family) {
@@ -177,7 +157,8 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       Object.values(family.parent_roles || {})
         .map(
           id =>
-            this.people.find(p => p.xref === id)?.name.replaceAll('/', '') || id
+            this.people.find(p => p.xref === id)?.name.replaceAll('/', '') ||
+            id,
         )
         .join(', ') || this._('Family without specified parents')
     )
@@ -195,44 +176,58 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       ${ids.map(
         (id, index) =>
           html`<label
-            >${this._('Child')} ${index + 1}<select
+            >${this._('Child')} ${index + 1}<md-outlined-select
               .value=${id}
               @change=${e => change(index, e.target.value)}
             >
-              <option value="">${this._('Remove from family')}</option>
+              <md-select-option value=""
+                ><div slot="headline">
+                  ${this._('Remove from family')}
+                </div></md-select-option
+              >
               ${this.people.map(
                 p =>
-                  html`<option value=${p.xref}>
-                    ${p.name.replaceAll('/', '')}
-                  </option>`
+                  html`<md-select-option value=${p.xref}
+                    ><div slot="headline">
+                      ${p.name.replaceAll('/', '')}
+                    </div></md-select-option
+                  >`,
               )}
-            </select></label
-          >`
-      )}${ids.length < limit
-        ? html`<label
-            >${this._('Add')}<select
-              .value=${''}
-              @change=${e => change(ids.length, e.target.value)}
-            >
-              <option value="">${this._('Choose a person')}</option>
-              ${this.people
+            </md-outlined-select></label
+          >`,
+      )}${
+        ids.length < limit
+          ? html`<label
+              >${this._('Add')}<md-outlined-select
+                .value=${''}
+                @change=${e => change(ids.length, e.target.value)}
+              >
+                <md-select-option value=""
+                  ><div slot="headline">
+                    ${this._('Choose a person')}
+                  </div></md-select-option
+                >
+                ${this.people
                 .filter(p => !ids.includes(p.xref))
                 .map(
                   p =>
-                    html`<option value=${p.xref}>
-                      ${p.name.replaceAll('/', '')}
-                    </option>`
+                    html`<md-select-option value=${p.xref}
+                      ><div slot="headline">
+                        ${p.name.replaceAll('/', '')}
+                      </div></md-select-option
+                    >`,
                 )}
-            </select></label
-          >`
-        : ''}
+              </md-outlined-select></label
+            >`
+          : ''
+      }
     </div>`
   }
 
   parent(role, label) {
     const roles = this.form.parent_roles || {}
     return html`<label
-      >${this._(label)}<select
+      >${this._(label)}<md-outlined-select
         .value=${roles[role] || ''}
         @change=${e => {
           this.form = {
@@ -241,19 +236,25 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
           }
         }}
       >
-        <option value="">${this._('Not specified')}</option>
+        <md-select-option value=""
+          ><div slot="headline">
+            ${this._('Not specified')}
+          </div></md-select-option
+        >
         ${this.people
           .filter(
             p =>
-              p.xref === roles[role] || !Object.values(roles).includes(p.xref)
+              p.xref === roles[role] || !Object.values(roles).includes(p.xref),
           )
           .map(
             p =>
-              html`<option value=${p.xref}>
-                ${p.name.replaceAll('/', '')}
-              </option>`
+              html`<md-select-option value=${p.xref}
+                ><div slot="headline">
+                  ${p.name.replaceAll('/', '')}
+                </div></md-select-option
+              >`,
           )}
-      </select></label
+      </md-outlined-select></label
     >`
   }
 
@@ -301,7 +302,7 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
     }
     if (this.kind === 'family') {
       const roles = Object.fromEntries(
-        Object.entries(f.parent_roles || {}).filter(([, id]) => id)
+        Object.entries(f.parent_roles || {}).filter(([, id]) => id),
       )
       if (
         r.create ||
@@ -382,7 +383,7 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       await this.post('/api/master/publish/', {revision: this.status.revision})
       await this.refresh()
       this.message = this._(
-        'Revision queued for publication. Geni and book status is shown below.'
+        'Revision queued for publication. Geni and book status is shown below.',
       )
     } catch (e) {
       this.message = e.message
@@ -415,56 +416,72 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       <summary>${this._('Tree editor and family books')}</summary>
       <p>
         ${this._(
-          'The master format is GEDCOM 5.5.1. Changes are saved to the tree file.'
+          'The master format is GEDCOM 5.5.1. Changes are saved to the tree file.',
         )}
       </p>
       <div class="fields">
         <label
-          >${this._('Record')}<select
+          >${this._('Record')}<md-outlined-select
             .value=${this.kind}
             @change=${e => {
               this.kind = e.target.value
               this.record = null
             }}
           >
-            <option value="person">${this._('Person')}</option>
-            <option value="family">${this._('Family')}</option>
-          </select></label
+            <md-select-option value="person"><div slot="headline">${this._('Person')}</div></md-select-option>
+            <md-select-option value="family"><div slot="headline">${this._('Family')}</div></md-select-option>
+          </md-outlined-select></label
         >
         <label
-          >${this._('Select')}<select @change=${e => this.load(e.target.value)}>
-            <option value="">${this._('Choose a record')}</option>
+          >${this._('Select')}<md-outlined-select @change=${e => this.load(e.target.value)}>
+            <md-select-option value=""><div slot="headline">${this._('Choose a record')}</div></md-select-option>
             ${(this.kind === 'person' ? this.people : this.families).map(
               p =>
-                html`<option value=${p.xref}>
-                  ${p.name?.replaceAll('/', '') || this.familyName(p)}
-                </option>`
+                html`<md-select-option value=${p.xref}
+                  ><div slot="headline">
+                    ${p.name?.replaceAll('/', '') || this.familyName(p)}
+                  </div></md-select-option
+                >`,
             )}
-          </select></label
+          </md-outlined-select></label
         >
       </div>
-      <button @click=${this.newRecord} ?disabled=${this.busy}>
+      <md-filled-button @click=${this.newRecord} ?disabled=${this.busy}>
         ${this._(this.kind === 'person' ? 'Add person' : 'Add family')}
-      </button>
-      ${this.record
-        ? html`<form @submit=${this.save}>
-            <div class="fields">
-              ${this.kind === 'person'
-                ? html`${this.field('surname', 'Surname')}${this.field(
-                      'given',
-                      'Given names'
-                    )}<label
-                      >${this._('Sex')}<select
-                        .value=${this.form.sex || 'U'}
-                        @change=${e => {
+      </md-filled-button>
+      ${
+        this.record
+          ? html`<form @submit=${this.save}>
+              <div class="fields">
+                ${
+                this.kind === 'person'
+                  ? html`${this.field('surname', 'Surname')}${this.field(
+                        'given',
+                        'Given names',
+                      )}<label
+                        >${this._('Sex')}<md-outlined-select
+                          .value=${this.form.sex || 'U'}
+                          @change=${e => {
                           this.form = {...this.form, sex: e.target.value}
                         }}
-                      >
-                        <option value="U">${this._('Not specified')}</option>
-                        <option value="M">${this._('Male')}</option>
-                        <option value="F">${this._('Female')}</option>
-                      </select></label
-                    >${this.field('occupation', 'Occupation')}${[
+                        >
+                          <md-select-option value="U"
+                            ><div slot="headline">
+                              ${this._('Not specified')}
+                            </div></md-select-option
+                          >
+                          <md-select-option value="M"
+                            ><div slot="headline">
+                              ${this._('Male')}
+                            </div></md-select-option
+                          >
+                          <md-select-option value="F"
+                            ><div slot="headline">
+                              ${this._('Female')}
+                            </div></md-select-option
+                          >
+                        </md-outlined-select></label
+                      >${this.field('occupation', 'Occupation')}${[
                       'birth',
                       'death',
                       'baptism',
@@ -475,48 +492,54 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
                           key + 'Date',
                           this._(
                             'Date of %s',
-                            this._(['Birth', 'Death', 'Baptism', 'Burial'][i])
-                          )
-                        )}${this.field(key + 'Place', 'Place')}`
+                            this._(['Birth', 'Death', 'Baptism', 'Burial'][i]),
+                          ),
+                        )}${this.field(key + 'Place', 'Place')}`,
                     )}`
-                : html`${this.parent('HUSB', 'Father')}${this.parent(
-                    'WIFE',
-                    'Mother'
-                  )}${this.members('children', 'Children')}`}
-              <label
-                >${this._('Add a note')}<textarea
-                  .value=${this.form.note || ''}
-                  @input=${e => {
+                  : html`${this.parent('HUSB', 'Father')}${this.parent(
+                      'WIFE',
+                      'Mother',
+                    )}${this.members('children', 'Children')}`
+              }
+                <label
+                  >${this._('Add a note')}<md-outlined-text-field
+                    type="textarea"
+                    rows="3"
+                    .value=${this.form.note || ''}
+                    @input=${e => {
                     this.form = {...this.form, note: e.target.value}
                   }}
-                ></textarea></label
-              >${this.field('source', 'Source or document reference')}
-            </div>
-            <button
-              type="submit"
-              ?disabled=${this.busy || this.status.projection !== 'ready'}
-            >
-              ${this._('Save')}
-            </button>
-          </form>`
-        : html``}
-      ${this.status.projection === 'pending'
-        ? html`<p>${this._('Gramps update is pending a retry.')}</p>
-            <button @click=${this.retry} ?disabled=${this.busy}>
-              ${this._('Retry update')}
-            </button>`
-        : html``}
-      <button
+                  ></md-outlined-text-field></label
+                >${this.field('source', 'Source or document reference')}
+              </div>
+              <md-filled-button
+                type="submit"
+                ?disabled=${this.busy || this.status.projection !== 'ready'}
+              >
+                ${this._('Save')}
+              </md-filled-button>
+            </form>`
+          : html``
+      }
+      ${
+        this.status.projection === 'pending'
+          ? html`<p>${this._('Gramps update is pending a retry.')}</p>
+              <md-filled-button @click=${this.retry} ?disabled=${this.busy}>
+                ${this._('Retry update')}
+              </md-filled-button>`
+          : html``
+      }
+      <md-filled-button
         @click=${this.publish}
         ?disabled=${this.busy || this.status.projection !== 'ready'}
       >
         ${this._('Update Geni and books')}</button
-      ><button
+      ><md-filled-button
         @click=${() =>
           this.download('/api/master/download/', 'export-Forest.ged')}
       >
         ${this._('Download GEDCOM')}
-      </button>
+      </md-filled-button>
       <p class="message" role="status">${this.message}</p>
       ${(this.status.publications || [])
         .slice(0, 1)
@@ -526,21 +549,21 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
               ${this._(
                 'Books: %s. Geni: %s.',
                 this.stateLabel(p.books_state),
-                this.stateLabel(p.geni_state)
+                this.stateLabel(p.geni_state),
               )}
-            </p>`
+            </p>`,
         )}
       ${this.books.map(
         b =>
-          html`<button
+          html`<md-filled-button
             @click=${() =>
               this.download(
                 '/api/master/books/' + encodeURIComponent(b.file),
-                b.file
+                b.file,
               )}
           >
             ${b.title || b.file}
-          </button>`
+          </md-filled-button>`,
       )}
     </details>`
   }

@@ -1,1 +1,5 @@
-window.grampsjsConfig = {gedcomMaster: true, defaultLanguage: 'ru'}
+window.grampsjsConfig = {
+  gedcomMaster: true,
+  defaultLanguage: 'ru',
+  hideRegisterLink: true,
+}

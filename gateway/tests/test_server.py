@@ -16,8 +16,16 @@ class Upstream(BaseHTTPRequestHandler):
             role=4 if token=='Bearer owner' else 0
             status=200 if token in {'Bearer owner','Bearer guest'} else 401
             data=json.dumps({'role':role}).encode()
+        elif self.path == '/api/oidc/login/':
+            self.send_response(302); self.send_header('Location', 'https://idp.example/authorize'); self.send_header('Content-Length', '0'); self.end_headers(); return
+        elif self.headers.get('Range') == 'bytes=0-1':
+            self.send_response(206); self.send_header('Content-Range', 'bytes 0-1/100'); self.send_header('Accept-Ranges', 'bytes'); self.send_header('Content-Length', '2'); self.end_headers(); self.wfile.write(b'ab'); return
         else:status=200;data=b'{}'
         self.send_response(status);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get('Content-Length', '0')))
+        self.send_response(200); self.send_header('Content-Length','2'); self.end_headers(); self.wfile.write(b'{}')
 
 class GatewayTest(unittest.TestCase):
     def setUp(self):
@@ -71,6 +79,33 @@ class GatewayTest(unittest.TestCase):
         status,_=self.request('/api/master/publications/'+revision+'/result/','owner',{'target':'books','state':'ready','detail':'Uploaded'})
         self.assertEqual(status,400)
         self.assertEqual(self.gateway.store.next_publication()['books_state'],'pending')
+
+    def test_media_query_token_is_scoped_and_ranges_are_relayed(self):
+        status, _ = self.request('/api/media/example/file?jwt=owner')
+        self.assertEqual(status, 200)
+        self.assertEqual(self.request('/api/master/download/?jwt=owner')[0], 401)
+        req = Request('http://127.0.0.1:' + str(self.gateway.server_port) + '/api/media/example/file?jwt=owner', headers={'Range': 'bytes=0-1'})
+        with urlopen(req, timeout=5) as res:
+            self.assertEqual(res.status, 206)
+            self.assertEqual(res.headers['Content-Range'], 'bytes 0-1/100')
+            self.assertEqual(res.headers['Accept-Ranges'], 'bytes')
+            self.assertEqual(res.read(), b'ab')
+
+    def test_oidc_bootstrap_redirect_is_returned_to_browser(self):
+        from urllib.request import build_opener, HTTPRedirectHandler
+        class NoRedirect(HTTPRedirectHandler):
+            def redirect_request(self, *args): return None
+        self.assertEqual(self.request('/api/oidc/config/')[0], 200)
+        with self.assertRaises(HTTPError) as caught:
+            build_opener(NoRedirect()).open('http://127.0.0.1:' + str(self.gateway.server_port) + '/api/oidc/login/', timeout=5)
+        self.assertEqual(caught.exception.code, 302)
+        self.assertEqual(caught.exception.headers['Location'], 'https://idp.example/authorize')
+        caught.exception.close()
+
+    def test_owner_can_save_tree_configuration_but_guest_cannot(self):
+        self.assertEqual(self.request('/api/trees/-/config', 'owner', {'title': 'Archive'})[0], 200)
+        self.assertEqual(self.request('/api/trees/-/config', 'guest', {})[0], 403)
+
 
 class ProjectionTest(unittest.TestCase):
     def test_all_links_use_stable_handles_and_parentage_is_unknown(self):

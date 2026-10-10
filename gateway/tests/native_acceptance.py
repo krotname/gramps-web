@@ -48,7 +48,7 @@ api=NativeAPI()
 user,_=api.request("GET","/api/users/-/")
 assert user["role"]==4
 store=Store(base/"master")
-data=FIXTURE.replace(b"2 DATE ABT 1900",b"2 DATE ABT 1900\r\n2 PLAC Original city")
+data=FIXTURE.replace(b"1 NAME Anna", b"1 RESN privacy\r\n1 CENS\r\n2 DATE 1910\r\n2 PLAC Census place\r\n2 NOTE Census evidence\r\n1 NAME Anna").replace(b"2 DATE ABT 1900",b"2 DATE ABT 1900\r\n2 PLAC Original city")
 store.initialize(data)
 callback=lambda tree,ops:project(api,store.folder,tree,ops)
 seed=store.retry(callback)
@@ -59,6 +59,9 @@ before=store.revision
 result=store.commit(before,"fixture-edit",[{"op":"person","xref":"I1","name":"Anne /New/","birth":{"date":"1899-03-14","place":"New city"},"append_notes":["Synthetic acceptance note"],"append_sources":["Synthetic source record"]}],callback)
 assert result["projection"]=="ready",result
 person,_=api.request("GET","/api/people/"+handle("I1"))
+assert person["private"] is True
+census,_=api.request("GET","/api/events/"+handle("I1:event:CENS:0"))
+assert census["private"] is True and census["date"]["dateval"][2]==1910
 assert person["primary_name"]["first_name"]=="Anne"
 assert person["primary_name"]["surname_list"][0]["surname"]=="New"
 event,_=api.request("GET","/api/events/"+handle("I1:event:BIRT:0"))

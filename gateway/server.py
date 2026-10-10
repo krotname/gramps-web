@@ -4,12 +4,22 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, parse_qs, quote, unquote
-from urllib.request import Request, urlopen
+from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler
 from .tree import Gedcom, Conflict, InvalidGedcom
 from .store import Store
 from .projection import API, project, value, handle
 
 PUBLIC_AUTH={"/api/token/", "/api/token/refresh/", "/api/metadata/"}
+PUBLIC_OIDC={
+    '/api/oidc/config/': {'GET'}, '/api/oidc/login/': {'GET'},
+    '/api/oidc/callback/': {'GET'}, '/api/oidc/tokens/': {'POST'},
+    '/api/oidc/logout/': {'GET', 'POST'},
+}
+
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, *args): return None
+
+UPSTREAM_OPENER=build_opener(NoRedirect())
 MAX_BODY=2*1024*1024
 
 def person_data(node):
@@ -55,6 +65,10 @@ class Handler(BaseHTTPRequestHandler):
         return self.rfile.read(size)
     def auth(self,owner=False):
         header=self.headers.get("Authorization","")
+        route=urlsplit(self.path).path
+        if not header and not owner and self.command in {'GET','HEAD'} and re.match(r'^/api/(media/|maps/|exporters/)',route):
+            tokens=parse_qs(urlsplit(self.path).query).get('jwt',[])
+            if len(tokens)==1:header='Bearer '+tokens[0]
         if not header.startswith("Bearer ") or len(header)>16384:raise HTTPError("",401,"Sign in",None,None)
         token=header[7:]
         api=API(self.server.upstream,token)
@@ -121,23 +135,49 @@ class Handler(BaseHTTPRequestHandler):
                 if route=="/api/master/publish/":return self.reply(202,store.publish(payload.get("revision")))
             return self.reply(404,{"message":"Unknown master route"})
         if route.startswith("/api/"):
-            if route not in PUBLIC_AUTH:self.auth()
-            if self.command not in {"GET","HEAD"} and route not in PUBLIC_AUTH and not (route.startswith("/api/users/") and self.command in {"PUT","POST","DELETE"}):
+            public=route in PUBLIC_AUTH or self.command in PUBLIC_OIDC.get(route,set())
+            config_write=route.rstrip('/')=='/api/trees/-/config' and self.command in {'PUT','POST'}
+            if not public:self.auth(owner=config_write)
+            if self.command not in {"GET","HEAD"} and not public and not config_write and not (route.startswith("/api/users/") and self.command in {"PUT","POST","DELETE"}):
                 return self.reply(409,{"message":"Изменяйте дерево через редактор GEDCOM"})
-            if route=="/api/metadata/" and self.command!="GET":return self.reply(405,{"message":"Method not allowed"})
+            if route=="/api/metadata/" and self.command not in {"GET","HEAD"}:return self.reply(405,{"message":"Method not allowed"})
         elif self.command not in {"GET","HEAD"}:
             return self.reply(405,{"message":"Method not allowed"})
-        req=Request(self.server.upstream+self.path,method=self.command,data=self.body() if self.command not in {"GET","HEAD"} else None,headers={k:self.headers[k] for k in ["Authorization","Content-Type","Accept","If-Match"] if k in self.headers})
+        forwarded=["Authorization","Content-Type","Accept","If-Match","Range","If-Range","If-None-Match"]
+        if route.startswith('/api/oidc/'):forwarded.append('Cookie')
+        req=Request(self.server.upstream+self.path,method=self.command,data=self.body() if self.command not in {"GET","HEAD"} else None,headers={k:self.headers[k] for k in forwarded if k in self.headers})
         try:
-            with urlopen(req,timeout=60) as res:
-                raw=res.read()
-                if route=="/api/metadata/" and self.headers.get("Authorization") and os.getenv("MASTER_FOCUS"):
-                    metadata=json.loads(raw)
-                    metadata.setdefault("db",{})["default_person"]=handle(os.environ["MASTER_FOCUS"])
-                    raw=json.dumps(metadata).encode()
-                return self.reply(res.status,raw,res.headers.get("Content-Type","application/octet-stream"),{k:res.headers[k] for k in ["ETag","X-Total-Count"] if k in res.headers and not (route=="/api/metadata/" and k=="ETag")})
+            response=UPSTREAM_OPENER.open(req,timeout=60)
         except HTTPError as exc:
-            return self.reply(exc.code,exc.read(),exc.headers.get("Content-Type","application/json"))
+            response=exc
+        with response as res:
+            if route=="/api/metadata/" and self.command=='GET' and self.headers.get("Authorization") and os.getenv("MASTER_FOCUS") and res.status==200:
+                raw=res.read(MAX_BODY+1)
+                if len(raw)>MAX_BODY:raise ValueError('Metadata response is too large')
+                metadata=json.loads(raw)
+                metadata.setdefault("db",{})["default_person"]=handle(os.environ["MASTER_FOCUS"])
+                return self.reply(200,json.dumps(metadata).encode(),res.headers.get('Content-Type','application/json'))
+            self.relay(res)
+
+    def relay(self,res):
+        self.response_started=True
+        self.send_response(res.status if hasattr(res,'status') else res.code)
+        self.send_header('Cache-Control','no-store')
+        self.send_header('X-Content-Type-Options','nosniff')
+        self.send_header('Referrer-Policy','same-origin')
+        for key in ['Content-Type','Content-Length','Content-Range','Accept-Ranges','ETag','X-Total-Count','Location']:
+            if key in res.headers:self.send_header(key,res.headers[key])
+        if urlsplit(self.path).path.startswith('/api/oidc/'):
+            for cookie in res.headers.get_all('Set-Cookie',[]):self.send_header('Set-Cookie',cookie)
+        if 'Content-Length' not in res.headers:
+            self.close_connection=True;self.send_header('Connection','close')
+        self.end_headers()
+        if self.command!='HEAD':
+            while True:
+                chunk=res.read(64*1024)
+                if not chunk:break
+                self.wfile.write(chunk)
+
     def do_HEAD(self):self.handle_request()
     def do_GET(self):self.handle_request()
     def do_POST(self):self.handle_request()
@@ -149,7 +189,9 @@ class Handler(BaseHTTPRequestHandler):
         except HTTPError as exc:self.reply(exc.code,{"message":exc.reason})
         except Conflict as exc:self.reply(409,{"message":str(exc)})
         except (InvalidGedcom,ValueError,KeyError,TypeError):self.reply(400,{"message":"Invalid request"})
-        except (OSError,URLError):self.reply(503,{"message":"Service is temporarily unavailable"})
+        except (OSError,URLError):
+            if getattr(self,'response_started',False):self.close_connection=True
+            else:self.reply(503,{"message":"Service is temporarily unavailable"})
 
 if __name__=="__main__":
     Gateway(("0.0.0.0",int(os.getenv("MASTER_PORT","8000"))),os.getenv("MASTER_DATA","/data/master"),os.getenv("MASTER_UPSTREAM","http://127.0.0.1:5000"),os.environ["MASTER_ORIGIN"]).serve_forever()

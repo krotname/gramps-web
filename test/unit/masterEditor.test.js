@@ -89,7 +89,7 @@ describe('canonical tree editor', () => {
     e.status = {revision: 'old', projection: 'ready'}
     e.form.birthPlace = 'New city'
     vi.spyOn(e, 'post').mockRejectedValue(
-      new Error('The tree changed; reload before saving')
+      new Error('The tree changed; reload before saving'),
     )
     await e.save({preventDefault() {}})
     expect(e.form.birthPlace).to.equal('New city')
@@ -106,5 +106,29 @@ describe('canonical tree editor', () => {
       xref: 'F1',
       children: ['I2', 'I3'],
     })
+  })
+  it('uses the shared mutation wrapper and suppresses premature database notifications', async () => {
+    const e = editor()
+    e.appState.apiPost = vi
+      .fn()
+      .mockResolvedValue({data: {projection: 'pending'}})
+    const payload = {revision: 'current'}
+    expect(await e.post('/api/master/commit/', payload)).to.deep.equal({
+      projection: 'pending',
+    })
+    expect(e.appState.apiPost).toHaveBeenCalledWith(
+      '/api/master/commit/',
+      payload,
+      {dbChanged: false},
+    )
+  })
+  it('can load again after a transient initial request failure', async () => {
+    const e = editor()
+    e.appState.apiGet = vi.fn().mockResolvedValueOnce({error: 'offline'})
+    await e.refresh()
+    expect(e.loaded).not.to.be.true
+    e.appState.apiGet = vi.fn().mockResolvedValue({data: {books: []}})
+    await e.refresh()
+    expect(e.loaded).to.be.true
   })
 })
