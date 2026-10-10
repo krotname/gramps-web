@@ -27,11 +27,16 @@ class Store:
                 detail TEXT DEFAULT '')""")
         self.recover()
 
+    @contextlib.contextmanager
     def connection(self):
         db = sqlite3.connect(self.db, timeout=30)
-        db.row_factory = sqlite3.Row
-        db.execute("PRAGMA synchronous=FULL")
-        return db
+        try:
+            db.row_factory = sqlite3.Row
+            db.execute("PRAGMA synchronous=FULL")
+            with db:
+                yield db
+        finally:
+            db.close()
 
     @contextlib.contextmanager
     def serialized(self):

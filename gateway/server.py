@@ -24,6 +24,13 @@ class Gateway(ThreadingHTTPServer):
     def __init__(self,address,folder,upstream,origin):
         self.store=Store(folder);self.upstream=upstream.rstrip("/");self.origin=origin
         super().__init__(address,Handler)
+        self.publisher=None
+        if os.getenv('MASTER_WORKER_CONFIG'):
+            from .publication_worker import start_worker
+            self.publisher=start_worker(self.store,os.environ['MASTER_WORKER_CONFIG'])
+    def server_close(self):
+        if self.publisher:self.publisher.stop.set()
+        super().server_close()
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version="HTTP/1.1"
