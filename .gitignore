@@ -23,3 +23,7 @@
 /_site/
 /dist/
 /out-tsc/
+
+# Python runtime files
+__pycache__/
+*.py[cod]
