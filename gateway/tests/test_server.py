@@ -107,13 +107,18 @@ class GatewayTest(unittest.TestCase):
         self.assertEqual(self.request('/api/trees/-/config', 'guest', {})[0], 403)
 
 
+    def test_only_owner_can_request_search_index_maintenance(self):
+        self.assertEqual(self.request('/api/search/index/', 'owner', {})[0], 200)
+        self.assertEqual(self.request('/api/search/index/', 'guest', {})[0], 403)
+
+
 class ProjectionTest(unittest.TestCase):
     def test_all_links_use_stable_handles_and_parentage_is_unknown(self):
         tree=Gedcom(FIXTURE)
         plan=objects(tree,date_parser=lambda d:{'_class':'Date','text':d})
-        family=plan[handle('F1')]
+        family=plan[handle("F1", "Family")]
         self.assertEqual(family['child_ref_list'][0]['frel'],'Unknown')
         self.assertEqual(family['child_ref_list'][0]['mrel'],'Unknown')
-        self.assertEqual(plan[handle('I2')]['parent_family_list'],[handle('F1')])
-        self.assertEqual(plan[handle('I1')]['family_list'],[handle('F1')])
+        self.assertEqual(plan[handle('I2')]['parent_family_list'],[handle("F1", "Family")])
+        self.assertEqual(plan[handle('I1')]['family_list'],[handle("F1", "Family")])
         self.assertEqual(plan,objects(tree,date_parser=lambda d:{'_class':'Date','text':d}))

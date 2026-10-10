@@ -136,6 +136,7 @@ class PublicationWorker:
 
     def run_once(self):
         with (self.store.folder / '.publication-worker.lock').open('a') as lock:
+            os.chmod(self.store.folder / '.publication-worker.lock', 0o600)
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
@@ -143,9 +144,15 @@ class PublicationWorker:
             try:
                 self.recover()
                 with self.store.connection() as db:
-                    row = db.execute("SELECT revision,books_state,geni_state FROM publications WHERE books_state='pending' OR geni_state='pending' ORDER BY rowid LIMIT 1").fetchone()
+                    row = db.execute("""SELECT p.revision,p.books_state,p.geni_state,
+                        NOT EXISTS(SELECT 1 FROM publications older
+                            WHERE older.rowid < p.rowid AND older.geni_state != 'ready') AS geni_eligible
+                        FROM publications p WHERE p.books_state='pending'
+                        OR (p.geni_state='pending' AND NOT EXISTS(SELECT 1 FROM publications older
+                            WHERE older.rowid < p.rowid AND older.geni_state != 'ready'))
+                        ORDER BY p.rowid LIMIT 1""").fetchone()
                 if row:
-                    targets = [target for target in ('books', 'geni') if row[target + '_state'] == 'pending']
+                    targets = [target for target in ('books', 'geni') if row[target + '_state'] == 'pending' and (target != 'geni' or row['geni_eligible'])]
                     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                         futures = [executor.submit(self.process, row['revision'], target) for target in targets]
                         for future in futures:

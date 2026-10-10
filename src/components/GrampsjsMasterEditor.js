@@ -425,20 +425,23 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
               this.record = null
             }}
           >
-            <md-select-option value="person"><div slot="headline">${this._(
-              'Person'
-            )}</div></md-select-option>
-            <md-select-option value="family"><div slot="headline">${this._(
-              'Family'
-            )}</div></md-select-option>
+            <md-select-option value="person"
+              ><div slot="headline">${this._('Person')}</div></md-select-option
+            >
+            <md-select-option value="family"
+              ><div slot="headline">${this._('Family')}</div></md-select-option
+            >
           </md-outlined-select></label
         >
         <label
-          >${this._('Select')}<md-outlined-select @change=${e =>
-      this.load(e.target.value)}>
-            <md-select-option value=""><div slot="headline">${this._(
-              'Choose a record'
-            )}</div></md-select-option>
+          >${this._('Select')}<md-outlined-select
+            @change=${e => this.load(e.target.value)}
+          >
+            <md-select-option value=""
+              ><div slot="headline">
+                ${this._('Choose a record')}
+              </div></md-select-option
+            >
             ${(this.kind === 'person' ? this.people : this.families).map(
               p =>
                 html`<md-select-option value=${p.xref}
@@ -453,89 +456,85 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       <md-filled-button @click=${this.newRecord} ?disabled=${this.busy}>
         ${this._(this.kind === 'person' ? 'Add person' : 'Add family')}
       </md-filled-button>
-      ${
-        this.record
-          ? html`<form @submit=${this.save}>
-              <div class="fields">
-                ${this.kind === 'person'
-                  ? html`${this.field('surname', 'Surname')}${this.field(
-                        'given',
-                        'Given names'
-                      )}<label
-                        >${this._('Sex')}<md-outlined-select
-                          .value=${this.form.sex || 'U'}
-                          @change=${e => {
-                            this.form = {...this.form, sex: e.target.value}
-                          }}
+      ${this.record
+        ? html`<form @submit=${this.save}>
+            <div class="fields">
+              ${this.kind === 'person'
+                ? html`${this.field('surname', 'Surname')}${this.field(
+                      'given',
+                      'Given names'
+                    )}<label
+                      >${this._('Sex')}<md-outlined-select
+                        .value=${this.form.sex || 'U'}
+                        @change=${e => {
+                          this.form = {...this.form, sex: e.target.value}
+                        }}
+                      >
+                        <md-select-option value="U"
+                          ><div slot="headline">
+                            ${this._('Not specified')}
+                          </div></md-select-option
                         >
-                          <md-select-option value="U"
-                            ><div slot="headline">
-                              ${this._('Not specified')}
-                            </div></md-select-option
-                          >
-                          <md-select-option value="M"
-                            ><div slot="headline">
-                              ${this._('Male')}
-                            </div></md-select-option
-                          >
-                          <md-select-option value="F"
-                            ><div slot="headline">
-                              ${this._('Female')}
-                            </div></md-select-option
-                          >
-                        </md-outlined-select></label
-                      >${this.field('occupation', 'Occupation')}${[
-                        'birth',
-                        'death',
-                        'baptism',
-                        'burial',
-                      ].map(
-                        (key, i) =>
-                          html`${this.field(
-                            key + 'Date',
-                            this._(
-                              'Date of %s',
-                              this._(['Birth', 'Death', 'Baptism', 'Burial'][i])
-                            )
-                          )}${this.field(key + 'Place', 'Place')}`
-                      )}`
-                  : html`${this.parent('HUSB', 'Father')}${this.parent(
-                      'WIFE',
-                      'Mother'
-                    )}${this.members('children', 'Children')}`}
-                <label
-                  >${this._('Add a note')}<md-outlined-text-field
-                    type="textarea"
-                    rows="3"
-                    .value=${this.form.note || ''}
-                    @input=${e => {
-                      this.form = {...this.form, note: e.target.value}
-                    }}
-                  ></md-outlined-text-field></label
-                >${this.field('source', 'Source or document reference')}
-              </div>
-              <md-filled-button
-                type="submit"
-                ?disabled=${this.busy || this.status.projection !== 'ready'}
-              >
-                ${this._('Save')}
-              </md-filled-button>
-            </form>`
-          : html``
-      }
-      ${
-        this.status.projection === 'pending'
-          ? html`<p>${this._('Gramps update is pending a retry.')}</p>
-              <md-filled-button @click=${this.retry} ?disabled=${this.busy}>
-                ${this._('Retry update')}
-              </md-filled-button>`
-          : html``
-      }
+                        <md-select-option value="M"
+                          ><div slot="headline">
+                            ${this._('Male')}
+                          </div></md-select-option
+                        >
+                        <md-select-option value="F"
+                          ><div slot="headline">
+                            ${this._('Female')}
+                          </div></md-select-option
+                        >
+                      </md-outlined-select></label
+                    >${this.field('occupation', 'Occupation')}${[
+                      'birth',
+                      'death',
+                      'baptism',
+                      'burial',
+                    ].map(
+                      (key, i) =>
+                        html`${this.field(
+                          key + 'Date',
+                          this._(
+                            'Date of %s',
+                            this._(['Birth', 'Death', 'Baptism', 'Burial'][i])
+                          )
+                        )}${this.field(key + 'Place', 'Place')}`
+                    )}`
+                : html`${this.parent('HUSB', 'Father')}${this.parent(
+                    'WIFE',
+                    'Mother'
+                  )}${this.members('children', 'Children')}`}
+              <label
+                >${this._('Add a note')}<md-outlined-text-field
+                  type="textarea"
+                  rows="3"
+                  .value=${this.form.note || ''}
+                  @input=${e => {
+                    this.form = {...this.form, note: e.target.value}
+                  }}
+                ></md-outlined-text-field></label
+              >${this.field('source', 'Source or document reference')}
+            </div>
+            <md-filled-button
+              type="submit"
+              ?disabled=${this.busy || this.status.projection !== 'ready'}
+            >
+              ${this._('Save')}
+            </md-filled-button>
+          </form>`
+        : html``}
+      ${this.status.projection === 'pending'
+        ? html`<p>${this._('Gramps update is pending a retry.')}</p>
+            <md-filled-button @click=${this.retry} ?disabled=${this.busy}>
+              ${this._('Retry update')}
+            </md-filled-button>`
+        : html``}
       <md-filled-button
         @click=${this.publish}
         ?disabled=${this.busy || this.status.projection !== 'ready'}
       >
-        ${this._('Update Geni and books')}</button
+        ${this._('Update Geni and books')}</md-filled-button
       ><md-filled-button
         @click=${() =>
           this.download('/api/master/download/', 'export-Forest.ged')}

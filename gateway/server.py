@@ -136,7 +136,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(404,{"message":"Unknown master route"})
         if route.startswith("/api/"):
             public=route in PUBLIC_AUTH or self.command in PUBLIC_OIDC.get(route,set())
-            config_write=route.rstrip('/')=='/api/trees/-/config' and self.command in {'PUT','POST'}
+            config_write=(route.rstrip('/')=='/api/trees/-/config' and self.command in {'PUT','POST'}) or (route.rstrip('/')=='/api/search/index' and self.command=='POST')
             if not public:self.auth(owner=config_write)
             if self.command not in {"GET","HEAD"} and not public and not config_write and not (route.startswith("/api/users/") and self.command in {"PUT","POST","DELETE"}):
                 return self.reply(409,{"message":"Изменяйте дерево через редактор GEDCOM"})

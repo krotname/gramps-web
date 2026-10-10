@@ -34,6 +34,20 @@ function editor() {
 }
 
 describe('canonical tree editor', () => {
+  it('downloads GEDCOM without triggering publication', () => {
+    const e = editor()
+    e.appState.permissions = {canEditMaster: true}
+    const publish = vi.spyOn(e, 'publish').mockImplementation(() => {})
+    const download = vi.spyOn(e, 'download').mockImplementation(() => {})
+    const target = document.createElement('div')
+    render(e.render(), target)
+    const button = [...target.querySelectorAll('md-filled-button')].find(b =>
+      b.textContent.includes('Download GEDCOM')
+    )
+    button.click()
+    expect(download).toHaveBeenCalledTimes(1)
+    expect(publish).not.toHaveBeenCalled()
+  })
   for (const [strings, title, action] of [
     [en, 'Tree editor and family books', 'Update Geni and books'],
     [ru, 'Редактор дерева и семейные книги', 'Обновить Geni и книги'],

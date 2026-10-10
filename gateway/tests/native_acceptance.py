@@ -49,22 +49,29 @@ user,_=api.request("GET","/api/users/-/")
 assert user["role"]==4
 store=Store(base/"master")
 data=FIXTURE.replace(b"1 NAME Anna", b"1 RESN privacy\r\n1 CENS\r\n2 DATE 1910\r\n2 PLAC Census place\r\n2 NOTE Census evidence\r\n1 NAME Anna").replace(b"2 DATE ABT 1900",b"2 DATE ABT 1900\r\n2 PLAC Original city")
+data=data.replace(b"1 NAME Anna",b"1 OBJE\r\n2 FILE synthetic.svg\r\n3 FORM svg\r\n2 TITL Synthetic portrait\r\n1 NAME Anna")
+Path(config["MEDIA_BASE_DIR"]).mkdir(parents=True,exist_ok=True)
+(Path(config["MEDIA_BASE_DIR"])/"synthetic.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="blue"/></svg>')
 store.initialize(data)
 callback=lambda tree,ops:project(api,store.folder,tree,ops)
 seed=store.retry(callback)
 assert seed["projection"]=="ready",seed
-family,_=api.request("GET","/api/families/"+handle("F1"))
+family,_=api.request("GET","/api/families/"+handle("F1", "Family"))
 assert family["child_ref_list"][0]["frel"]==["Unknown",6] or "Unknown" in str(family["child_ref_list"][0]["frel"]),family["child_ref_list"]
 before=store.revision
 result=store.commit(before,"fixture-edit",[{"op":"person","xref":"I1","name":"Anne /New/","birth":{"date":"1899-03-14","place":"New city"},"append_notes":["Synthetic acceptance note"],"append_sources":["Synthetic source record"]}],callback)
 assert result["projection"]=="ready",result
 person,_=api.request("GET","/api/people/"+handle("I1"))
 assert person["private"] is True
-census,_=api.request("GET","/api/events/"+handle("I1:event:CENS:0"))
+media_handle=person["media_list"][0]["ref"]
+media,_=api.request("GET","/api/media/"+media_handle)
+assert media["path"]=="synthetic.svg" and media["desc"]=="Synthetic portrait"
+assert client.get("/api/media/"+media_handle+"/file",headers=auth).status_code==200
+census,_=api.request("GET","/api/events/"+handle("I1:event:CENS:0", "Event"))
 assert census["private"] is True and census["date"]["dateval"][2]==1910
 assert person["primary_name"]["first_name"]=="Anne"
 assert person["primary_name"]["surname_list"][0]["surname"]=="New"
-event,_=api.request("GET","/api/events/"+handle("I1:event:BIRT:0"))
+event,_=api.request("GET","/api/events/"+handle("I1:event:BIRT:0", "Event"))
 assert event["date"]["dateval"][:3]==[14,3,1899],event["date"]
 try:store.commit(before,"stale", [{"op":"person","xref":"I1","sex":"F"}],callback)
 except Conflict:pass

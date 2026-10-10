@@ -16,6 +16,13 @@ FIXTURE = ("\ufeff0 HEAD\r\n1 GEDC\r\n2 VERS 5.5.1\r\n1 CHAR UTF-8\r\n"
 
 
 class TreeTest(unittest.TestCase):
+    def test_non_utf8_declaration_is_rejected_before_edits(self):
+        for declared in (b'ANSEL', b'ASCII', b'UNICODE'):
+            with self.assertRaises(InvalidGedcom):
+                Gedcom(FIXTURE.replace(b'CHAR UTF-8',b'CHAR '+declared))
+        with self.assertRaises(InvalidGedcom):
+            Gedcom(FIXTURE.replace(b'1 CHAR UTF-8\r\n',b''))
+
     def test_unchanged_roundtrip_preserves_extensions_and_bytes(self):
         self.assertEqual(Gedcom(FIXTURE).dump(), FIXTURE)
 

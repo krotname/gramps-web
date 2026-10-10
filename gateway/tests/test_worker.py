@@ -147,3 +147,23 @@ class WorkerTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             PublicationWorker.execute('books', [sys.executable, '-c', "import sys;sys.stdout.write('x'*3000000)"], environment, 5)
         self.assertLessEqual((folder / 'result.json').stat().st_size, 2 * 1024 * 1024)
+
+    def test_later_geni_revision_waits_for_earlier_readback_while_books_continue(self):
+        self.store.publication_result(self.revision,'geni','blocked','Ambiguous external result')
+        newer=self.store.commit(self.revision,'later-publish',[{'op':'person','xref':'I1','name':'Changed /Name/'}],lambda *_:None)['revision']
+        self.store.publish(newer)
+        calls=[]
+        def run(target,command,environment,timeout):
+            revision=environment['GENEALOGY_REVISION']
+            calls.append((target,revision))
+            result=self.runner(target,command,environment,timeout)
+            result['canonical_revision']=revision
+            return result
+        worker=PublicationWorker(self.store,self.config,run)
+        worker.run_once();worker.run_once()
+        self.assertFalse(worker.run_once())
+        self.assertIn(('books',newer),calls)
+        self.assertNotIn(('geni',newer),calls)
+        self.store.publication_result(self.revision,'geni','ready','Exact prior profile readback verified')
+        self.assertTrue(worker.run_once())
+        self.assertIn(('geni',newer),calls)

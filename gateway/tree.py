@@ -184,6 +184,8 @@ class Gedcom:
         version = head.first("GEDC")
         if not version or not version.first("VERS") or version.first("VERS").value != "5.5.1":
             raise InvalidGedcom("Only stable GEDCOM 5.5.1 is accepted")
+        if not head.first("CHAR") or head.first("CHAR").value != "UTF-8":
+            raise InvalidGedcom("GEDCOM must declare CHAR UTF-8")
 
     @property
     def people(self):

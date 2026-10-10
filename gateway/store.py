@@ -13,10 +13,14 @@ from .tree import Gedcom, Conflict, InvalidGedcom
 class Store:
     def __init__(self, folder):
         self.folder = Path(folder)
-        self.folder.mkdir(parents=True, exist_ok=True)
+        self.folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(self.folder, 0o700)
         self.file = self.folder / "export-Forest.ged"
         self.lock = threading.RLock()
         self.db = self.folder / "journal.sqlite3"
+        descriptor = os.open(self.db, os.O_CREAT | os.O_WRONLY, 0o600)
+        os.close(descriptor)
+        os.chmod(self.db, 0o600)
         with self.connection() as db:
             db.execute("""CREATE TABLE IF NOT EXISTS commits(
                 key TEXT PRIMARY KEY, before_rev TEXT, revision TEXT,
@@ -41,6 +45,7 @@ class Store:
     @contextlib.contextmanager
     def serialized(self):
         with self.lock, (self.folder / ".writer.lock").open("a") as stream:
+            os.chmod(self.folder / ".writer.lock", 0o600)
             fcntl.flock(stream, fcntl.LOCK_EX)
             try:
                 yield
@@ -212,7 +217,9 @@ class Store:
             raise InvalidGedcom("Provide a PDF no larger than 32 MiB")
         with self.serialized():
             folder=self.folder/'books'/revision
-            folder.mkdir(parents=True,exist_ok=True)
+            folder.mkdir(mode=0o700,parents=True,exist_ok=True)
+            os.chmod(folder.parent,0o700)
+            os.chmod(folder,0o700)
             tmp=folder/(name+'.tmp')
             tmp.write_bytes(data)
             os.chmod(tmp,0o600)
@@ -232,5 +239,6 @@ class Store:
         with self.serialized():
             tmp=self.folder/'books'/'.manifest.tmp'
             tmp.write_text(json.dumps(manifest,ensure_ascii=False),encoding='utf-8')
+            os.chmod(tmp,0o600)
             tmp.replace(self.folder/'books'/'manifest.json')
         return self.publication_result(revision,'books','ready','Six PDF files uploaded; manifest revision matches frozen GEDCOM')

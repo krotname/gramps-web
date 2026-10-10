@@ -1,14 +1,15 @@
 """Deterministic Gramps projection; canonical GEDCOM is never regenerated from it."""
-import hashlib, json, re, uuid
+import hashlib, json, mimetypes, os, re, uuid
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
 from .tree import MONTHS
 
-KINDS = {"Person":"people", "Family":"families", "Event":"events", "Place":"places", "Note":"notes", "Source":"sources", "Citation":"citations"}
+KINDS = {"Person":"people", "Family":"families", "Event":"events", "Place":"places", "Note":"notes", "Source":"sources", "Citation":"citations", "Media":"media"}
 
-def handle(key):
-    return uuid.uuid5(uuid.NAMESPACE_URL, "gedcom-master:" + key).hex
+def handle(key, kind="Person"):
+    return uuid.uuid5(uuid.NAMESPACE_URL, "gedcom-master:" + kind + ":" + key).hex
 
 def value(node, tag):
     child = node.first(tag)
@@ -20,11 +21,12 @@ def date_dict(date):
     from gramps.gen.lib.json_utils import object_to_dict
     return object_to_dict(parser.parse(date))
 
-def objects(tree, date_parser=None):
+def objects(tree, date_parser=None, media_paths=None):
     date_parser=date_parser or date_dict
+    media_paths = media_paths or {}
     result = {}
     def put(kind, key, **fields):
-        h = handle(key)
+        h = handle(key, kind)
         previous_private=result.get(h,{}).get("private",False)
         result[h] = {"_class":kind, "handle":h, "private":False, **fields}
         result[h]['private']=result[h]['private'] or bool(previous_private)
@@ -38,8 +40,11 @@ def objects(tree, date_parser=None):
         for i, child in enumerate(node.all("NOTE")):
             content = child.content()
             if content.startswith("@") and content.endswith("@") and content[1:-1] in tree.records:
-                content = tree.records[content[1:-1]].content()
-            values.append(note(content,f"{key}:note:{i}",private or restricted(child)))
+                ref = tree.records[content[1:-1]]
+                content = ref.content()
+            else:
+                ref = None
+            values.append(note(content,f"{key}:note:{i}",private or restricted(child) or restricted(ref)))
         return values
     def citations(node, key, private=False):
         values = []
@@ -52,6 +57,31 @@ def objects(tree, date_parser=None):
             ch = put("Citation",f"{key}:citation:{i}",source_handle=sh,page=value(child,"PAGE"),note_list=notes(child,f"{key}:citation:{i}",private),private=private or restricted(child))
             values.append(ch)
         return values
+    def media(node, key, private=False):
+        refs = []
+        for i, child in enumerate(node.all("OBJE")):
+            target = tree.records.get(child.value.strip("@")) if child.value.startswith("@") else child
+            if target is None:
+                raise ValueError("Missing media reference")
+            for j, file in enumerate(target.all("FILE")):
+                original = file.content()
+                if not original:
+                    continue
+                mapped = media_paths.get(original, original)
+                if not isinstance(mapped,str) or urlsplit(mapped).scheme not in {"", "https", "http"}:
+                    raise ValueError("Unsupported media location")
+                if not urlsplit(mapped).scheme and (Path(mapped).is_absolute() or ".." in Path(mapped).parts):
+                    raise ValueError("Unsafe private media mapping")
+                form = value(file, "FORM") or value(target, "FORM")
+                mime = form if "/" in form else mimetypes.guess_type("file." + form)[0] or "application/octet-stream"
+                title = value(file, "TITL") or value(target, "TITL")
+                mk = "media:" + (target.xref or key + ":" + str(i)) + ":" + str(j)
+                hidden = private or restricted(child) or restricted(target)
+                mh = put("Media", mk, gramps_id=target.xref or "", path=mapped, mime=mime,
+                    desc=title, date=date_parser(value(target, "DATE")),
+                    note_list=notes(target, mk, hidden), citation_list=citations(target, mk, hidden), private=hidden)
+                refs.append({"_class":"MediaRef", "ref":mh, "private":hidden})
+        return refs
     event_names={"BIRT":"Birth","DEAT":"Death","BAPM":"Baptism","BURI":"Burial","RESI":"Residence","OCCU":"Occupation","MARR":"Marriage","DIV":"Divorce","EVEN":"Custom"}
     standard_events=set('BIRT CHR DEAT BURI CREM BAPM BARM BASM BLES CHRA CONF FCOM ORDN NATU EMIG IMMI CENS PROB WILL GRAD RETI ADOP EVEN CAST DSCR EDUC IDNO NATI NCHI NMR OCCU PROP RELI RESI SSN TITL FACT ANUL DIV DIVF ENGA MARB MARC MARL MARS MARR'.split())
     def events(node,key):
@@ -66,7 +96,7 @@ def objects(tree, date_parser=None):
                 addr=child.first("ADDR")
                 if addr:place=", ".join(value(addr,t) for t in ["ADR1","CITY","STAE","CTRY"] if value(addr,t))
             ph=put("Place","place:"+place,title=place,name={"_class":"PlaceName","value":place},place_type="Unknown",private=private) if place else ""
-            eh=put("Event",ek,type=event_names.get(child.tag) or value(child,"TYPE") or child.tag,date=date_parser(value(child,"DATE")),place=ph,description=child.value if child.value not in {"Y","N"} else "",citation_list=citations(child,ek,private),note_list=notes(child,ek,private),private=private)
+            eh=put("Event",ek,type=event_names.get(child.tag) or value(child,"TYPE") or child.tag,date=date_parser(value(child,"DATE")),place=ph,description=child.value if child.value not in {"Y","N"} else "",citation_list=citations(child,ek,private),note_list=notes(child,ek,private),media_list=media(child,ek,private),private=private)
             if child.tag=="BIRT":birth=len(refs)
             if child.tag=="DEAT":death=len(refs)
             refs.append({"_class":"EventRef","ref":eh,"role":"Primary" if node.tag=="INDI" else "Family"})
@@ -75,15 +105,14 @@ def objects(tree, date_parser=None):
         text=node.content();parts=text.split("/")
         given=value(node,"GIVN") or parts[0].strip()
         surname=value(node,"SURN") or (parts[1].strip() if len(parts)>1 else "")
-        if not surname and " " in given:given,surname=given.rsplit(" ",1)
         return {"_class":"Name","first_name":given,"surname_list":[{"_class":"Surname","surname":surname}],"nick":value(node,"NICK"),"type":"Birth Name"}
     for pid,node in tree.people.items():
         names=node.all("NAME")
         refs,bi,di=events(node,pid)
-        put("Person",pid,gramps_id=pid,gender={"M":1,"F":0}.get(value(node,"SEX"),2),primary_name=name(names[0]) if names else {"_class":"Name"},alternate_names=[name(n) for n in names[1:]],event_ref_list=refs,birth_ref_index=bi,death_ref_index=di,family_list=[handle(n.value.strip("@")) for n in node.all("FAMS")],parent_family_list=[handle(n.value.strip("@")) for n in node.all("FAMC")],private=restricted(node),note_list=notes(node,pid,restricted(node)),citation_list=citations(node,pid,restricted(node)),urls=[{"_class":"Url","path":value(node,"_URL"),"type":"Web Home"}] if value(node,"_URL") else [])
+        put("Person",pid,gramps_id=pid,gender={"M":1,"F":0}.get(value(node,"SEX"),2),primary_name=name(names[0]) if names else {"_class":"Name"},alternate_names=[name(n) for n in names[1:]],event_ref_list=refs,birth_ref_index=bi,death_ref_index=di,family_list=[handle(n.value.strip("@"), "Family") for n in node.all("FAMS")],parent_family_list=[handle(n.value.strip("@"), "Family") for n in node.all("FAMC")],private=restricted(node),note_list=notes(node,pid,restricted(node)),citation_list=citations(node,pid,restricted(node)),media_list=media(node,pid,restricted(node)),urls=[{"_class":"Url","path":value(node,"_URL"),"type":"Web Home"}] if value(node,"_URL") else [])
     for fid,node in tree.families.items():
         refs,_,_=events(node,fid)
-        put("Family",fid,gramps_id=fid,father_handle=handle(value(node,"HUSB").strip("@")) if value(node,"HUSB") else "",mother_handle=handle(value(node,"WIFE").strip("@")) if value(node,"WIFE") else "",child_ref_list=[{"_class":"ChildRef","ref":handle(n.value.strip("@")),"frel":"Unknown","mrel":"Unknown"} for n in node.all("CHIL")],event_ref_list=refs,type="Unknown",private=restricted(node),note_list=notes(node,fid,restricted(node)),citation_list=citations(node,fid,restricted(node)))
+        put("Family",fid,gramps_id=fid,father_handle=handle(value(node,"HUSB").strip("@")) if value(node,"HUSB") else "",mother_handle=handle(value(node,"WIFE").strip("@")) if value(node,"WIFE") else "",child_ref_list=[{"_class":"ChildRef","ref":handle(n.value.strip("@")),"frel":"Unknown","mrel":"Unknown"} for n in node.all("CHIL")],event_ref_list=refs,type="Unknown",private=restricted(node),note_list=notes(node,fid,restricted(node)),citation_list=citations(node,fid,restricted(node)),media_list=media(node,fid,restricted(node)))
     return result
 
 class API:
@@ -96,7 +125,9 @@ class API:
             return (json.loads(raw) if raw else None), dict(res.headers)
 
 def project(api, folder, tree, operations=None):
-    desired=objects(tree)
+    media_map=os.environ.get("MASTER_MEDIA_MAP")
+    media_paths=json.loads(Path(media_map).read_text()) if media_map else {}
+    desired=objects(tree, media_paths=media_paths)
     index=Path(folder)/"projection-index.json"
     previous=json.loads(index.read_text()) if index.exists() else {}
     current={h:{"kind":o["_class"],"digest":hashlib.sha256(json.dumps(o,sort_keys=True,ensure_ascii=False).encode()).hexdigest()} for h,o in desired.items()}
@@ -132,5 +163,5 @@ def project(api, folder, tree, operations=None):
         except HTTPError as exc:
             if exc.code!=404:raise
     tmp=index.with_suffix(".tmp")
-    tmp.write_text(json.dumps(current),encoding="utf-8");tmp.replace(index)
+    tmp.write_text(json.dumps(current),encoding="utf-8");os.chmod(tmp,0o600);tmp.replace(index)
     return {"objects":len(desired),"created":len(new)}
