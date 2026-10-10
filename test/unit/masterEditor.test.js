@@ -1,8 +1,12 @@
 import {describe, it, expect, vi} from 'vitest'
+import {render} from 'lit'
+import en from '../../lang/en.json'
+import ru from '../../lang/ru.json'
 import {GrampsjsMasterEditor} from '../../src/components/GrampsjsMasterEditor.js'
 
 function editor() {
   const e = new GrampsjsMasterEditor()
+  e.appState = {i18n: {strings: en}}
   e.kind = 'person'
   e.record = {
     xref: 'I1',
@@ -23,6 +27,49 @@ function editor() {
 }
 
 describe('canonical tree editor', () => {
+  for (const [strings, title, action] of [
+    [en, 'Tree editor and family books', 'Update Geni and books'],
+    [ru, 'Редактор дерева и семейные книги', 'Обновить Geni и книги'],
+  ]) {
+    it(`renders the editor in the selected language: ${title}`, () => {
+      const e = editor()
+      e.appState = {i18n: {strings}, permissions: {canEditMaster: true}}
+      const target = document.createElement('div')
+      render(e.render(), target)
+      expect(target.querySelector('summary').textContent).to.equal(title)
+      expect(target.textContent).to.contain(action)
+    })
+  }
+  it('adds a father without changing the existing mother role', () => {
+    const e = editor()
+    e.kind = 'family'
+    e.record = {xref: 'F1', parent_roles: {WIFE: 'I1'}, children: ['I2']}
+    e.form = {parent_roles: {HUSB: 'I3', WIFE: 'I1'}, children: ['I2']}
+    expect(e.operation()).to.deep.equal({
+      op: 'family',
+      xref: 'F1',
+      parent_roles: {HUSB: 'I3', WIFE: 'I1'},
+    })
+  })
+  for (const action of ['save', 'retry']) {
+    for (const projection of ['pending', 'ready']) {
+      it(`announces database changes only after a ready projection on ${action} (${projection})`, async () => {
+        const e = editor()
+        e.status = {revision: 'old', projection: 'ready'}
+        const changed = vi.fn()
+        window.addEventListener('db:changed', changed)
+        vi.spyOn(e, 'post').mockResolvedValue({projection})
+        vi.spyOn(e, 'refresh').mockResolvedValue()
+        vi.spyOn(e, 'load').mockResolvedValue()
+        try {
+          await e[action]({preventDefault() {}})
+          expect(changed).toHaveBeenCalledTimes(projection === 'ready' ? 1 : 0)
+        } finally {
+          window.removeEventListener('db:changed', changed)
+        }
+      })
+    }
+  }
   it('changes only the selected place and preserves a partial date', () => {
     const e = editor()
     e.form.birthPlace = 'New city'
@@ -52,8 +99,8 @@ describe('canonical tree editor', () => {
   it('changes children without rewriting the unchanged parents', () => {
     const e = editor()
     e.kind = 'family'
-    e.record = {xref: 'F1', parents: ['I1'], children: ['I2']}
-    e.form = {parents: ['I1'], children: ['I2', 'I3']}
+    e.record = {xref: 'F1', parent_roles: {WIFE: 'I1'}, children: ['I2']}
+    e.form = {parent_roles: {WIFE: 'I1'}, children: ['I2', 'I3']}
     expect(e.operation()).to.deep.equal({
       op: 'family',
       xref: 'F1',

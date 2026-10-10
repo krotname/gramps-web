@@ -1,4 +1,5 @@
 import json, threading, tempfile, unittest
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -49,6 +50,18 @@ class GatewayTest(unittest.TestCase):
         status,data=self.request('/api/master/person/I1/','owner')
         self.assertEqual(status,200)
         self.assertEqual(json.loads(data)['revision'],self.gateway.store.revision)
+    def test_pending_retry_returns_accepted_without_claiming_completion(self):
+        for route in ["/api/master/retry/", "/api/master/project/"]:
+            with self.subTest(route=route), patch("gateway.server.project", side_effect=RuntimeError("Projection unavailable")):
+                status, data = self.request(route, "owner", {})
+                self.assertEqual(status, 202)
+                self.assertEqual(json.loads(data)["projection"], "pending")
+
+    def test_family_list_keeps_explicit_parent_roles(self):
+        status, data = self.request("/api/master/families/", "owner")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(data)[0]["parent_roles"], {"WIFE": "I1"})
+
     def test_unknown_book_and_traversal_are_rejected(self):
         self.assertEqual(self.request('/api/master/books/../../journal.sqlite3','owner')[0],404)
     def test_books_cannot_be_marked_ready_without_upload(self):

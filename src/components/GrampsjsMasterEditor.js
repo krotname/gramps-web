@@ -135,7 +135,7 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       if (this.kind === 'family') {
         this.record = this.families.find(f => f.xref === id)
         this.form = {
-          parents: [...this.record.parents],
+          parent_roles: {...this.record.parent_roles},
           children: [...this.record.children],
           note: '',
           source: '',
@@ -164,7 +164,7 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
 
   field(key, label) {
     return html`<label
-      >${label}<input
+      >${this._(label)}<input
         .value=${this.form[key] || ''}
         @input=${e => {
           this.form = {...this.form, [key]: e.target.value}
@@ -174,12 +174,12 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
 
   familyName(family) {
     return (
-      family.parents
+      Object.values(family.parent_roles || {})
         .map(
           id =>
             this.people.find(p => p.xref === id)?.name.replaceAll('/', '') || id
         )
-        .join(' и ') || 'Семья без указанных родителей'
+        .join(', ') || this._('Family without specified parents')
     )
   }
 
@@ -191,15 +191,15 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       this.form = {...this.form, [key]: values.filter(Boolean)}
     }
     return html`<div>
-      <p>${label}</p>
+      <p>${this._(label)}</p>
       ${ids.map(
         (id, index) =>
           html`<label
-            >${label === 'Дети' ? 'Ребёнок' : 'Родитель'} ${index + 1}<select
+            >${this._('Child')} ${index + 1}<select
               .value=${id}
               @change=${e => change(index, e.target.value)}
             >
-              <option value="">Убрать из семьи</option>
+              <option value="">${this._('Remove from family')}</option>
               ${this.people.map(
                 p =>
                   html`<option value=${p.xref}>
@@ -210,11 +210,11 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
           >`
       )}${ids.length < limit
         ? html`<label
-            >Добавить<select
+            >${this._('Add')}<select
               .value=${''}
               @change=${e => change(ids.length, e.target.value)}
             >
-              <option value="">Выберите человека</option>
+              <option value="">${this._('Choose a person')}</option>
               ${this.people
                 .filter(p => !ids.includes(p.xref))
                 .map(
@@ -229,6 +229,44 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
     </div>`
   }
 
+  parent(role, label) {
+    const roles = this.form.parent_roles || {}
+    return html`<label
+      >${this._(label)}<select
+        .value=${roles[role] || ''}
+        @change=${e => {
+          this.form = {
+            ...this.form,
+            parent_roles: {...roles, [role]: e.target.value},
+          }
+        }}
+      >
+        <option value="">${this._('Not specified')}</option>
+        ${this.people
+          .filter(
+            p =>
+              p.xref === roles[role] || !Object.values(roles).includes(p.xref)
+          )
+          .map(
+            p =>
+              html`<option value=${p.xref}>
+                ${p.name.replaceAll('/', '')}
+              </option>`
+          )}
+      </select></label
+    >`
+  }
+
+  stateLabel(state) {
+    const keys = {
+      pending: 'Pending',
+      ready: 'Ready',
+      failed: 'Failed',
+      blocked: 'Blocked',
+    }
+    return this._(keys[state] || state)
+  }
+
   newRecord() {
     const id =
       (this.kind === 'person' ? 'ILOCAL' : 'FLOCAL') +
@@ -239,14 +277,14 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       name: '',
       sex: 'U',
       occupation: '',
-      parents: [],
+      parent_roles: {},
       children: [],
     }
     this.form = {
       given: '',
       surname: '',
       sex: 'U',
-      parents: [],
+      parent_roles: {},
       children: [],
       note: '',
       source: '',
@@ -262,11 +300,17 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       ...(r.create ? {create: true} : {}),
     }
     if (this.kind === 'family') {
-      for (const key of ['parents', 'children']) {
-        const values = (f[key] || []).filter(Boolean)
-        if (JSON.stringify(values) !== JSON.stringify(r[key]) || r.create)
-          op[key] = values
-      }
+      const roles = Object.fromEntries(
+        Object.entries(f.parent_roles || {}).filter(([, id]) => id)
+      )
+      if (
+        r.create ||
+        ['HUSB', 'WIFE'].some(role => roles[role] !== r.parent_roles?.[role])
+      )
+        op.parent_roles = roles
+      const children = (f.children || []).filter(Boolean)
+      if (r.create || JSON.stringify(children) !== JSON.stringify(r.children))
+        op.children = children
     } else {
       const given = r.given || r.name.split('/')[0].trim()
       const surname = r.surname || r.name.split('/')[1]?.trim() || ''
@@ -302,12 +346,12 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       })
       this.message =
         result.projection === 'ready'
-          ? 'Изменение сохранено.'
-          : 'GEDCOM сохранён; обновление Gramps требует повтора.'
+          ? this._('Change saved.')
+          : this._('GEDCOM saved; Gramps update needs a retry.')
       const id = this.record.xref
       await this.refresh()
       await this.load(id)
-      fireEvent(window, 'db:changed')
+      if (result.projection === 'ready') fireEvent(window, 'db:changed')
     } catch (err) {
       this.message = err.message
     } finally {
@@ -318,9 +362,13 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
   async retry() {
     this.busy = true
     try {
-      await this.post('/api/master/retry/', {})
+      const result = await this.post('/api/master/retry/', {})
+      this.message =
+        result.projection === 'ready'
+          ? this._('Projection updated.')
+          : this._('Gramps update is still pending.')
       await this.refresh()
-      fireEvent(window, 'db:changed')
+      if (result.projection === 'ready') fireEvent(window, 'db:changed')
     } catch (e) {
       this.message = e.message
     } finally {
@@ -333,8 +381,9 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
     try {
       await this.post('/api/master/publish/', {revision: this.status.revision})
       await this.refresh()
-      this.message =
-        'Редакция поставлена в очередь публикации. Готовность Geni и книг показана ниже.'
+      this.message = this._(
+        'Revision queued for publication. Geni and book status is shown below.'
+      )
     } catch (e) {
       this.message = e.message
     } finally {
@@ -348,7 +397,7 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       const res = await fetch(__APIHOST__ + route, {
         headers: {Authorization: 'Bearer ' + token},
       })
-      if (!res.ok) throw new Error('Не удалось скачать файл')
+      if (!res.ok) throw new Error(this._('Could not download the file'))
       const url = URL.createObjectURL(await res.blob())
       const a = document.createElement('a')
       a.href = url
@@ -363,26 +412,28 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
   render() {
     if (!this.appState.permissions?.canEditMaster) return html``
     return html`<details>
-      <summary>Редактор дерева и семейные книги</summary>
+      <summary>${this._('Tree editor and family books')}</summary>
       <p>
-        Основной формат — GEDCOM 5.5.1. Изменения сохраняются в файл дерева.
+        ${this._(
+          'The master format is GEDCOM 5.5.1. Changes are saved to the tree file.'
+        )}
       </p>
       <div class="fields">
         <label
-          >Запись<select
+          >${this._('Record')}<select
             .value=${this.kind}
             @change=${e => {
               this.kind = e.target.value
               this.record = null
             }}
           >
-            <option value="person">Человек</option>
-            <option value="family">Семья</option>
+            <option value="person">${this._('Person')}</option>
+            <option value="family">${this._('Family')}</option>
           </select></label
         >
         <label
-          >Выбрать<select @change=${e => this.load(e.target.value)}>
-            <option value="">Выберите запись</option>
+          >${this._('Select')}<select @change=${e => this.load(e.target.value)}>
+            <option value="">${this._('Choose a record')}</option>
             ${(this.kind === 'person' ? this.people : this.families).map(
               p =>
                 html`<option value=${p.xref}>
@@ -393,27 +444,27 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
         >
       </div>
       <button @click=${this.newRecord} ?disabled=${this.busy}>
-        Добавить ${this.kind === 'person' ? 'человека' : 'семью'}
+        ${this._(this.kind === 'person' ? 'Add person' : 'Add family')}
       </button>
       ${this.record
         ? html`<form @submit=${this.save}>
             <div class="fields">
               ${this.kind === 'person'
-                ? html`${this.field('surname', 'Фамилия')}${this.field(
+                ? html`${this.field('surname', 'Surname')}${this.field(
                       'given',
-                      'Имя и отчество'
+                      'Given names'
                     )}<label
-                      >Пол<select
+                      >${this._('Sex')}<select
                         .value=${this.form.sex || 'U'}
                         @change=${e => {
                           this.form = {...this.form, sex: e.target.value}
                         }}
                       >
-                        <option value="U">Не указан</option>
-                        <option value="M">Мужской</option>
-                        <option value="F">Женский</option>
+                        <option value="U">${this._('Not specified')}</option>
+                        <option value="M">${this._('Male')}</option>
+                        <option value="F">${this._('Female')}</option>
                       </select></label
-                    >${this.field('occupation', 'Занятие')}${[
+                    >${this.field('occupation', 'Occupation')}${[
                       'birth',
                       'death',
                       'baptism',
@@ -422,52 +473,63 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
                       (key, i) =>
                         html`${this.field(
                           key + 'Date',
-                          ['Рождение', 'Смерть', 'Крещение', 'Погребение'][i] +
-                            ' — дата'
-                        )}${this.field(key + 'Place', 'Место')}`
+                          this._(
+                            'Date of %s',
+                            this._(['Birth', 'Death', 'Baptism', 'Burial'][i])
+                          )
+                        )}${this.field(key + 'Place', 'Place')}`
                     )}`
-                : html`${this.members('parents', 'Родители', 2)}${this.members(
-                    'children',
-                    'Дети'
-                  )}`}
+                : html`${this.parent('HUSB', 'Father')}${this.parent(
+                    'WIFE',
+                    'Mother'
+                  )}${this.members('children', 'Children')}`}
               <label
-                >Добавить заметку<textarea
+                >${this._('Add a note')}<textarea
                   .value=${this.form.note || ''}
                   @input=${e => {
                     this.form = {...this.form, note: e.target.value}
                   }}
                 ></textarea></label
-              >${this.field('source', 'Источник или реквизиты документа')}
+              >${this.field('source', 'Source or document reference')}
             </div>
             <button
               type="submit"
               ?disabled=${this.busy || this.status.projection !== 'ready'}
             >
-              Сохранить
+              ${this._('Save')}
             </button>
           </form>`
         : html``}
       ${this.status.projection === 'pending'
-        ? html`<p>Обновление Gramps ожидает повтора.</p>
+        ? html`<p>${this._('Gramps update is pending a retry.')}</p>
             <button @click=${this.retry} ?disabled=${this.busy}>
-              Повторить обновление
+              ${this._('Retry update')}
             </button>`
         : html``}
       <button
         @click=${this.publish}
         ?disabled=${this.busy || this.status.projection !== 'ready'}
       >
-        Обновить Geni и книги</button
+        ${this._('Update Geni and books')}</button
       ><button
         @click=${() =>
           this.download('/api/master/download/', 'export-Forest.ged')}
       >
-        Скачать GEDCOM
+        ${this._('Download GEDCOM')}
       </button>
       <p class="message" role="status">${this.message}</p>
       ${(this.status.publications || [])
         .slice(0, 1)
-        .map(p => html`<p>Книги: ${p.books_state}. Geni: ${p.geni_state}.</p>`)}
+        .map(
+          p =>
+            html`<p>
+              ${this._(
+                'Books: %s. Geni: %s.',
+                this.stateLabel(p.books_state),
+                this.stateLabel(p.geni_state)
+              )}
+            </p>`
+        )}
       ${this.books.map(
         b =>
           html`<button

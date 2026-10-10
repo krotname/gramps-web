@@ -26,15 +26,40 @@ def ged_date(value):
     value = text(value).strip()
     if not value:
         return ""
-    match = re.fullmatch(r"(\d{4})(?:-(\d{1,2})(?:-(\d{1,2}))?)?", value)
-    if match:
-        year, month, day = match.groups()
-        if month:
-            datetime.date(int(year), int(month), int(day or 1))
-            return (str(int(day)) + " " if day else "") + MONTHS[int(month)-1] + " " + year
-        return year
-    if not re.fullmatch(r"(?:ABT |CAL |EST |BEF |AFT |BET |FROM )?(?:\d{1,2} )?(?:(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC) )?\d{3,4}(?: (?:AND|TO) (?:\d{1,2} )?(?:(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC) )?\d{3,4})?", value):
-        raise InvalidGedcom("Use an ISO date or a GEDCOM date")
+    iso = re.fullmatch(r"(\d{4})(?:-(\d{1,2})(?:-(\d{1,2}))?)?", value)
+    if iso:
+        year, month, day = iso.groups()
+        try:
+            datetime.date(int(year), int(month or 1), int(day or 1))
+        except ValueError as exc:
+            raise InvalidGedcom("Invalid calendar date") from exc
+        return (str(int(day)) + " " if day else "") + (MONTHS[int(month)-1] + " " if month else "") + year
+
+    def calendar_date(date):
+        match = re.fullmatch(r"(?:@#DGREGORIAN@ )?(?:(\d{1,2}) )?(?:(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC) )?(\d{3,4})", date)
+        if not match:
+            raise InvalidGedcom("Use an ISO date or a GEDCOM Gregorian date")
+        day, month, year = match.groups()
+        if day and not month:
+            raise InvalidGedcom("A day requires a month")
+        try:
+            datetime.date(int(year), MONTHS.index(month) + 1 if month else 1, int(day or 1))
+        except ValueError as exc:
+            raise InvalidGedcom("Invalid calendar date") from exc
+
+    if value.startswith("BET "):
+        parts = value[4:].split(" AND ")
+        if len(parts) != 2:
+            raise InvalidGedcom("A date range requires BET date AND date")
+    elif value.startswith("FROM "):
+        parts = value[5:].split(" TO ")
+        if len(parts) not in {1, 2}:
+            raise InvalidGedcom("A date period requires FROM date TO date")
+    else:
+        single = re.sub(r"^(ABT|CAL|EST|BEF|AFT|TO) ", "", value)
+        parts = [single]
+    for date in parts:
+        calendar_date(date)
     return value
 
 @dataclass
@@ -269,6 +294,13 @@ class Gedcom:
             child.children = [n for n in child.children if n.tag not in {"ADDR", "CITY", "STAE", "CTRY", "ADR1", "POST"}]
             child.set("PLAC", text(fields["place"]))
 
+    def family_backlinks(self, xref, members, tag):
+        for pid, person in self.people.items():
+            if pid in members:
+                person.append_unique(tag, f"@{xref}@")
+            else:
+                person.children = [n for n in person.children if not (n.tag == tag and n.value == f"@{xref}@")]
+
     def apply(self, op):
         if not isinstance(op, dict):
             raise InvalidGedcom("Operation must be an object")
@@ -321,27 +353,49 @@ class Gedcom:
                 else:
                     raise InvalidGedcom("Unsupported clear field")
         elif kind == "family":
-            if set(op) - {"op", "xref", "create", "parents", "children", "marriage", "divorce", "append_notes", "append_sources"}:
+            if set(op) - {"op", "xref", "create", "parents", "parent_roles", "children", "marriage", "divorce", "append_notes", "append_sources"}:
                 raise InvalidGedcom("Unsupported family field")
             node = self.add(xref, "FAM") if op.get("create") else self.families.get(xref)
             if node is None:
                 raise InvalidGedcom("Unknown family")
-            for field_name, tags, backref in [("parents", ["HUSB", "WIFE"], "FAMS"), ("children", ["CHIL"], "FAMC")]:
-                if field_name not in op:
-                    continue
-                members = op[field_name]
-                if not isinstance(members, list) or any(p not in self.people for p in members) or len(members) != len(set(members)):
-                    raise InvalidGedcom("Unknown or duplicate family member")
-                if field_name == "parents" and len(members) > 2:
-                    raise InvalidGedcom("GEDCOM supports two parents per family")
-                for person in self.people.values():
-                    person.children = [n for n in person.children if not (n.tag == backref and n.value == f"@{xref}@")]
-                for tag in tags:
+            if "parents" in op and "parent_roles" in op:
+                raise InvalidGedcom("Choose either parents or explicit parent roles")
+            roles = None
+            if "parent_roles" in op:
+                roles = op["parent_roles"]
+                if not isinstance(roles, dict) or set(roles) - {"HUSB", "WIFE"}:
+                    raise InvalidGedcom("Invalid parent role")
+            elif "parents" in op:
+                members = op["parents"]
+                if not isinstance(members, list) or any(not isinstance(p, str) or p not in self.people for p in members) or len(members) != len(set(members)) or len(members) > 2:
+                    raise InvalidGedcom("Unknown or duplicate parent")
+                roles = {tag: node.first(tag).value.strip("@") for tag in ["HUSB", "WIFE"] if node.first(tag) and node.first(tag).value.strip("@") in members}
+                new_members = [p for p in members if p not in roles.values()]
+                free = [tag for tag in ["HUSB", "WIFE"] if tag not in roles]
+                if new_members and (len(new_members) != 1 or len(free) != 1):
+                    raise InvalidGedcom("Select explicit roles for new parents")
+                roles.update(zip(free, new_members))
+            if roles is not None:
+                members = list(roles.values())
+                if any(not isinstance(p, str) or p not in self.people for p in members) or len(members) != len(set(members)):
+                    raise InvalidGedcom("Unknown or duplicate parent")
+                for tag in ["HUSB", "WIFE"]:
+                    old = node.first(tag)
+                    pid = roles.get(tag)
+                    if old and old.value == f"@{pid}@":
+                        continue
                     node.remove(tag)
-                for i, pid in enumerate(members):
-                    tag = tags[min(i, len(tags)-1)]
-                    node.append_unique(tag, f"@{pid}@")
-                    self.people[pid].append_unique(backref, f"@{xref}@")
+                    if pid:
+                        node.append_unique(tag, f"@{pid}@")
+                self.family_backlinks(xref, members, "FAMS")
+            if "children" in op:
+                members = op["children"]
+                if not isinstance(members, list) or any(not isinstance(p, str) or p not in self.people for p in members) or len(members) != len(set(members)):
+                    raise InvalidGedcom("Unknown or duplicate family member")
+                existing = {n.value.strip("@"): n for n in node.all("CHIL")}
+                node.remove("CHIL")
+                node.children += [existing.get(pid) or Node(node.level + 1, "CHIL", f"@{pid}@") for pid in members]
+                self.family_backlinks(xref, members, "FAMC")
             for field_name, tag in [("marriage", "MARR"), ("divorce", "DIV")]:
                 if field_name in op:
                     self.event(node, tag, op[field_name])

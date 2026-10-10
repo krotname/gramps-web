@@ -83,7 +83,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(200,{"revision":snapshot_rev,**person_data(tree.people[pid])})
                 if route=="/api/master/families/":
                     tree=Gedcom(snapshot)
-                    return self.reply(200,[{"xref":k,"parents":[n.value.strip("@") for n in node.children if n.tag in {"HUSB","WIFE"}],"children":[n.value.strip("@") for n in node.all("CHIL")]} for k,node in tree.families.items()])
+                    return self.reply(200,[{"xref":k,"parents":[n.value.strip("@") for n in node.children if n.tag in {"HUSB","WIFE"}],"parent_roles":{n.tag:n.value.strip("@") for n in node.children if n.tag in {"HUSB","WIFE"}},"children":[n.value.strip("@") for n in node.all("CHIL")]} for k,node in tree.families.items()])
                 if route=="/api/master/books/":
                     manifest=store.folder/"books/manifest.json"
                     return self.reply(200,json.loads(manifest.read_text()) if manifest.exists() else {"books":[],"state":"not built"})
@@ -108,10 +108,10 @@ class Handler(BaseHTTPRequestHandler):
                 if route=="/api/master/commit/":
                     result=store.commit(payload.get("revision"),payload.get("key"),payload.get("operations"),callback)
                     return self.reply(200 if result["projection"]=="ready" else 202,result)
-                if route=="/api/master/retry/":return self.reply(200,store.retry(callback))
+                if route in {"/api/master/retry/", "/api/master/project/"}:
+                    result=store.retry(callback)
+                    return self.reply(200 if result["projection"]=="ready" else 202,result)
                 if route=="/api/master/publish/":return self.reply(202,store.publish(payload.get("revision")))
-                if route=="/api/master/project/":
-                    return self.reply(200,store.retry(callback))
             return self.reply(404,{"message":"Unknown master route"})
         if route.startswith("/api/"):
             if route not in PUBLIC_AUTH:self.auth()

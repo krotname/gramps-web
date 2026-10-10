@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from gateway.tree import Gedcom, Conflict, InvalidGedcom
+from gateway.tree import Gedcom, Conflict, InvalidGedcom, ged_date
 from gateway.store import Store
 
 
@@ -59,6 +59,41 @@ class TreeTest(unittest.TestCase):
         self.assertNotIn('FAMC', tree.records['I2'].render())
         self.assertIn('FAMC @F1@', tree.records['I3'].render())
         self.assertNotIn('PEDI', tree.dump().decode('utf-8'))
+
+    def test_adding_father_preserves_existing_wife_role(self):
+        tree = Gedcom(FIXTURE)
+        tree.apply({"op": "person", "xref": "I3", "create": True, "name": "Carl /Example/"})
+        tree.apply({"op": "family", "xref": "F1", "parents": ["I1", "I3"]})
+        self.assertEqual(tree.families["F1"].first("WIFE").value, "@I1@")
+        self.assertEqual(tree.families["F1"].first("HUSB").value, "@I3@")
+        tree.validate()
+
+    def test_explicit_parent_roles_and_backlinks(self):
+        tree = Gedcom(FIXTURE)
+        tree.apply({"op": "person", "xref": "I3", "create": True, "name": "Carl /Example/"})
+        tree.apply({"op": "family", "xref": "F1", "parent_roles": {"HUSB": "I3", "WIFE": "I1"}})
+        self.assertEqual(tree.families["F1"].first("WIFE").value, "@I1@")
+        self.assertEqual(tree.families["F1"].first("HUSB").value, "@I3@")
+        tree.validate()
+        tree.apply({"op": "family", "xref": "F1", "parent_roles": {"WIFE": "I1"}})
+        self.assertIsNone(tree.families["F1"].first("HUSB"))
+        self.assertIsNone(tree.people["I3"].first("FAMS"))
+        tree.validate()
+
+    def test_ambiguous_new_parent_roles_require_explicit_selection(self):
+        tree = Gedcom(FIXTURE)
+        with self.assertRaises(InvalidGedcom):
+            tree.apply({"op": "family", "xref": "F2", "create": True, "parents": ["I1"]})
+
+    def test_invalid_calendar_days_and_qualifiers_are_rejected(self):
+        for date in ["99 DEC 1900", "31 FEB 1900", "29 FEB 1900", "BET 1900", "FROM 1900 AND 2000", "ABT 1900 TO 2000", "1900 AND 2000", "0000"]:
+            with self.subTest(date=date), self.assertRaises(InvalidGedcom):
+                ged_date(date)
+
+    def test_valid_partial_range_and_period_dates(self):
+        for date in ["1900", "FEB 1900", "29 FEB 2000", "ABT 1900", "BET 1900 AND 1902", "FROM 1900", "TO 1900", "FROM 1900 TO 1902"]:
+            with self.subTest(date=date):
+                self.assertEqual(ged_date(date), date)
 
     def test_unknown_parent_is_rejected(self):
         tree = Gedcom(FIXTURE)

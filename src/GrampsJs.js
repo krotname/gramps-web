@@ -773,7 +773,8 @@ export class GrampsJs extends LitElement {
 
     this._loadDbInfo()
 
-    const browserLang = getTreeConfig().defaultLanguage || getBrowserLanguage()
+    const browserLang =
+      this.appState.frontendConfig.defaultLanguage || getBrowserLanguage()
     if (browserLang && !this.appState.settings.lang) {
       this.appState.updateSettings({lang: browserLang})
       this._loadFrontendStrings(browserLang)
