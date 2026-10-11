@@ -137,8 +137,9 @@ class Handler(BaseHTTPRequestHandler):
         if route.startswith("/api/"):
             public=route in PUBLIC_AUTH or self.command in PUBLIC_OIDC.get(route,set())
             config_write=(route.rstrip('/')=='/api/trees/-/config' and self.command in {'PUT','POST'}) or (route.rstrip('/')=='/api/search/index' and self.command=='POST')
+            translation_read=self.command=='POST' and re.fullmatch(r'/api/translations/[A-Za-z][A-Za-z0-9_-]{0,31}/?',route) is not None
             if not public:self.auth(owner=config_write)
-            if self.command not in {"GET","HEAD"} and not public and not config_write and not (route.startswith("/api/users/") and self.command in {"PUT","POST","DELETE"}):
+            if self.command not in {"GET","HEAD"} and not public and not config_write and not translation_read and not (route.startswith("/api/users/") and self.command in {"PUT","POST","DELETE"}):
                 return self.reply(409,{"message":"Изменяйте дерево через редактор GEDCOM"})
             if route=="/api/metadata/" and self.command not in {"GET","HEAD"}:return self.reply(405,{"message":"Method not allowed"})
         elif self.command not in {"GET","HEAD"}:
