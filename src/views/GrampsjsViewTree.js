@@ -39,6 +39,7 @@ import {
 import {chartNameDisplayFormat, fireEvent, isKeyEventInInput} from '../util.js'
 import {chartTransitionDuration, formatChartName} from '../charts/util.js'
 import {renderPersonAvatar} from '../components/personListUtils.js'
+import {FamilyGraph} from '../charts/model/FamilyGraph.js'
 import {iconButtonColorStyles, listAvatarStyles} from '../SharedStyles.js'
 import {
   chartFanIconPath,
@@ -390,8 +391,32 @@ export class GrampsjsViewTree extends GrampsjsStaleDataMixin(GrampsjsView) {
   async _fetchData(url) {
     this._dataRequest += 1
     const request = this._dataRequest
+    const relationship = this.chart === 'relationship'
+    const grampsId = this.grampsId
+    const separation = this.settingValues.separation
     this.loading = true
-    const data = await this.appState.apiGet(url)
+    let data = await this.appState.apiGet(url)
+    if (request !== this._dataRequest) {
+      return
+    }
+    // DegreesOfSeparation belongs to an optional Gramps addon. Servers
+    // without it return 404; use the same authorized people endpoint and
+    // select the requested neighbours from its extended family data.
+    if (relationship && data.errorDetail?.status === 404) {
+      const [endpoint, query] = url.split('?')
+      const params = new URLSearchParams(query)
+      params.delete('rules')
+      data = await this.appState.apiGet(`${endpoint}?${params}`)
+      if ('data' in data) {
+        data = {
+          ...data,
+          data: new FamilyGraph(data.data).withinSeparation(
+            grampsId,
+            separation
+          ),
+        }
+      }
+    }
     if (request !== this._dataRequest) {
       return
     }

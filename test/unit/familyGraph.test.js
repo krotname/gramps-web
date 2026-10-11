@@ -28,6 +28,35 @@ const S = {handle: 'S', gramps_id: 'I2'}
 const graph = new FamilyGraph([R, S])
 
 describe('FamilyGraph', () => {
+  it('limits relationship distance across partners and all parent families', () => {
+    const birth = family('birth', 'P', 'M', [childRef('R'), childRef('S')])
+    const adopted = family('adopted', 'A', '', [childRef('R', 'Adopted')])
+    const own = family('own', 'R', 'W', [childRef('K')])
+    const grandchild = family('next', 'K', '', [childRef('G')])
+    const halfSibling = family('half', 'P', '', [childRef('H')])
+    const relatives = new FamilyGraph([
+      {
+        handle: 'R',
+        gramps_id: 'I1',
+        extended: {
+          primary_parent_family: birth,
+          parent_families: [birth, adopted],
+          families: [own],
+        },
+      },
+      {handle: 'P', extended: {families: [birth, halfSibling]}},
+      ...['M', 'S', 'A', 'W'].map(handle => ({handle})),
+      {handle: 'K', extended: {families: [grandchild]}},
+      ...['G', 'H', 'X'].map(handle => ({handle})),
+    ])
+    const handles = steps =>
+      relatives.withinSeparation('I1', steps).map(p => p.handle)
+    expect(handles(0)).toEqual(['R'])
+    expect(handles(1)).toEqual(['R', 'P', 'M', 'S', 'A', 'W', 'K', 'H'])
+    expect(handles(2)).toEqual(['R', 'P', 'M', 'S', 'A', 'W', 'K', 'G', 'H'])
+    expect(relatives.withinSeparation('missing', 2)).toEqual([])
+  })
+
   it('looks up people by handle and Gramps ID', () => {
     expect(graph.person('R')).toBe(R)
     expect(graph.personByGrampsId('I2')).toBe(S)

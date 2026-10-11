@@ -157,6 +157,18 @@ class Store:
                 return self._project(row["key"], Gedcom(self.file.read_bytes()), json.loads(row["operations"]), project)
         return self.status()
 
+    def refresh(self, project):
+        """Rebuild derived objects after an operator installs new media paths."""
+        with self.serialized():
+            with self.connection() as db:
+                row = db.execute("SELECT * FROM commits WHERE projection='pending' ORDER BY rowid LIMIT 1").fetchone()
+                if row is None:
+                    row = db.execute("SELECT * FROM commits WHERE revision=? ORDER BY rowid DESC LIMIT 1", (self.revision,)).fetchone()
+                if row is None:
+                    raise Conflict("No canonical commit is available to project")
+                db.execute("UPDATE commits SET projection='pending',error='' WHERE key=?", (row["key"],))
+            return self._project(row["key"], Gedcom(self.file.read_bytes()), None, project)
+
     def publish(self, expected):
         with self.serialized(), self.connection() as db:
             if expected != self.revision:
