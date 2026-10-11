@@ -908,7 +908,10 @@ export class GrampsJs extends LitElement {
               `/api/people/${encodeURIComponent(defaultPerson)}?keys=gramps_id`
             )
             .then(person => {
-              if (person.data?.gramps_id && !this.appState.settings.homePerson) {
+              if (
+                person.data?.gramps_id &&
+                !this.appState.settings.homePerson
+              ) {
                 this.appState.updateSettings(
                   {homePerson: person.data.gramps_id},
                   true
