@@ -410,7 +410,10 @@ export class GrampsjsViewTree extends GrampsjsStaleDataMixin(GrampsjsView) {
       if ('data' in data) {
         data = {
           ...data,
-          data: new FamilyGraph(data.data).withinSeparation(grampsId, separation),
+          data: new FamilyGraph(data.data).withinSeparation(
+            grampsId,
+            separation
+          ),
         }
       }
     }
