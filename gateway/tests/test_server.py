@@ -52,6 +52,20 @@ class GatewayTest(unittest.TestCase):
         self.assertEqual(self.request('/api/master/download/','owner')[0],200)
     def test_native_write_is_blocked_at_gateway(self):
         self.assertEqual(self.request('/api/objects/','owner',[])[0],409)
+    def test_translation_post_is_authenticated_read_and_tree_writes_remain_blocked(self):
+        self.assertEqual(self.request('/api/translations/ru?v=3.23.1', data={'strings': ['Home']})[0], 401)
+        for token in ['owner', 'guest']:
+            self.assertEqual(self.request('/api/translations/ru?v=3.23.1', token, {'strings': ['Home']})[0], 200)
+            self.assertEqual(self.request('/api/translations/ru/settings', token, {})[0], 409)
+            self.assertEqual(self.request('/api/objects/', token, [])[0], 409)
+        self.assertEqual(self.request('/api/translations/ru', 'owner', {}, 'https://attacker.example')[0], 403)
+
+    @patch.dict('os.environ', {'MASTER_FOCUS': 'I1'})
+    def test_default_focus_metadata_uses_stable_person_handle(self):
+        status, body = self.request('/api/metadata/', 'owner')
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)['db']['default_person'], handle('I1'))
+
     def test_cross_origin_cannot_publish(self):
         self.assertEqual(self.request('/api/master/publish/','owner',{},'https://attacker.example')[0],403)
     def test_snapshot_returns_same_revision_as_file(self):

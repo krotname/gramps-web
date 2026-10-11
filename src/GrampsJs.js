@@ -876,6 +876,7 @@ export class GrampsJs extends LitElement {
     const additionalStrings = await getFrontendStrings(lang)
     const strings = {...this.appState.i18n.strings, ...additionalStrings}
     this._updateAppState({i18n: {strings, lang}})
+    document.documentElement.lang = lang.replaceAll('_', '-')
   }
 
   _loadDbInfo(setReady = true) {
@@ -896,6 +897,25 @@ export class GrampsJs extends LitElement {
       }
       if ('data' in data) {
         this._updateAppState({dbInfo: data.data})
+        const defaultPerson = data.data.db?.default_person
+        if (
+          this.appState.frontendConfig?.gedcomMaster &&
+          defaultPerson &&
+          !this.appState.settings.homePerson
+        ) {
+          this.appState
+            .apiGet(
+              `/api/people/${encodeURIComponent(defaultPerson)}?keys=gramps_id`
+            )
+            .then(person => {
+              if (person.data?.gramps_id && !this.appState.settings.homePerson) {
+                this.appState.updateSettings(
+                  {homePerson: person.data.gramps_id},
+                  true
+                )
+              }
+            })
+        }
         this._checkSearch()
         this._checkApiVersion()
         if (this.appState.dbInfo?.locale?.language !== undefined) {
