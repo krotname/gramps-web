@@ -33,7 +33,7 @@ export class FamilyGraph {
     return [...this._people.values()]
   }
 
-  // Selects relatives by parent, child or partner steps. Only fetched people
+  // Selects relatives by parent, child, sibling or partner steps. Only fetched people
   // participate, so this also respects the API's visibility restrictions.
   withinSeparation(grampsId, separation) {
     const root = this.personByGrampsId(grampsId)
@@ -46,14 +46,28 @@ export class FamilyGraph {
       neighbours.get(left).add(right)
       neighbours.get(right).add(left)
     }
+    const connectSiblings = children => {
+      for (const left of children) {
+        for (const right of children) connect(left, right)
+      }
+    }
+    const childrenByParent = new Map()
     for (const family of this._families.values()) {
       const {father_handle: father, mother_handle: mother} = family
       connect(father, mother)
+      const children = (family.child_ref_list ?? []).map(child => child.ref)
+      connectSiblings(children)
+      for (const parent of [father, mother].filter(Boolean)) {
+        if (!childrenByParent.has(parent))
+          childrenByParent.set(parent, new Set())
+        for (const child of children) childrenByParent.get(parent).add(child)
+      }
       for (const child of family.child_ref_list ?? []) {
         connect(father, child.ref)
         connect(mother, child.ref)
       }
     }
+    for (const children of childrenByParent.values()) connectSiblings(children)
     const selected = new Set([root.handle])
     let frontier = [root.handle]
     for (let depth = 0; depth < separation && frontier.length; depth += 1) {
