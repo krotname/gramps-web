@@ -1275,6 +1275,7 @@ export class GrampsJs extends LitElement {
         _strings = Object.assign(additionalStrings, _strings)
       }
       this._updateAppState({i18n: {strings: _strings, lang}})
+      document.documentElement.lang = lang.replaceAll('_', '-')
     }
     this._loadingStrings = false
     if ('error' in data) {
