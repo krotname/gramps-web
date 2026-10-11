@@ -105,6 +105,21 @@ class GatewayTest(unittest.TestCase):
         self.assertEqual(store.status()["projection"], "ready")
         self.assertEqual(store.file.read_bytes(), before)
 
+    def test_bodyless_projection_request_is_authenticated_and_rebuilds(self):
+        self.gateway.store.retry(lambda *_: None)
+        for token, expected in [(None, 401), ('guest', 403), ('owner', 200)]:
+            headers={'Authorization': 'Bearer '+token} if token else {}
+            req=Request('http://127.0.0.1:'+str(self.gateway.server_port)+'/api/master/project/',
+                        method='POST', headers=headers)
+            with patch('gateway.server.project') as projection:
+                try:
+                    with urlopen(req, timeout=5) as res: status=res.status
+                except HTTPError as exc:
+                    status=exc.code
+                    exc.close()
+                self.assertEqual(status, expected)
+                self.assertEqual(projection.call_count, int(expected == 200))
+
     def test_family_list_keeps_explicit_parent_roles(self):
         status, data = self.request("/api/master/families/", "owner")
         self.assertEqual(status, 200)

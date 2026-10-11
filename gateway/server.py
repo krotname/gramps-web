@@ -118,7 +118,8 @@ class Handler(BaseHTTPRequestHandler):
             elif self.command=="POST":
                 upload=re.fullmatch(r"/api/master/publications/([a-f0-9]{64})/books/([^/]+)",route)
                 if upload:return self.reply(200,store.save_book(upload[1],unquote(upload[2]),self.body(32*1024*1024)))
-                payload=json.loads(self.body())
+                raw=self.body()
+                payload={} if not raw and route in {"/api/master/retry/", "/api/master/project/"} else json.loads(raw)
                 result_route=re.fullmatch(r"/api/master/publications/([a-f0-9]{64})/(result|books)/",route)
                 if result_route:
                     if result_route[2]=="books":return self.reply(200,store.install_books(result_route[1],payload.get("books")))
