@@ -12,6 +12,7 @@ import './GrampsjsMapOverlay.js'
 import './GrampsjsMapLayerSwitcher.js'
 import './GrampsjsIcon.js'
 import {fireEvent} from '../util.js'
+import {__APIHOST__} from '../api.js'
 import {sharedStyles} from '../SharedStyles.js'
 import {GrampsjsAppStateMixin} from '../mixins/GrampsjsAppStateMixin.js'
 
@@ -26,6 +27,24 @@ const defaultConfig = {
 }
 
 const {maplibregl} = window
+
+export function mapResourceRequest(url, resourceType) {
+  const u = new URL(url, location.origin)
+  const apiOrigin = new URL(__APIHOST__ || location.origin, location.origin)
+    .origin
+  if (
+    (resourceType === 'Image' || resourceType === 'Tile') &&
+    u.origin === apiOrigin &&
+    u.pathname.startsWith('/api/media/')
+  ) {
+    const jwt =
+      localStorage.getItem('access_token') || u.searchParams.get('jwt')
+    u.searchParams.delete('jwt')
+    const headers = jwt ? {Authorization: `Bearer ${jwt}`} : {}
+    return {url: u.toString(), headers}
+  }
+  return {url}
+}
 
 // Returns a copy of an OpenHistoricalMap style with labels in the given
 // locales.
@@ -182,20 +201,7 @@ class GrampsjsMap extends GrampsjsAppStateMixin(LitElement) {
       center: [this.longitude, this.latitude],
       zoom: this.zoom,
       attributionControl: true,
-      transformRequest: (url, resourceType) => {
-        const u = new URL(url, location.origin)
-        if (
-          (resourceType === 'Image' || resourceType === 'Tile') &&
-          u.pathname.startsWith('/api/media/')
-        ) {
-          const jwt =
-            localStorage.getItem('access_token') || u.searchParams.get('jwt')
-          u.searchParams.delete('jwt')
-          const headers = jwt ? {Authorization: `Bearer ${jwt}`} : {}
-          return {url: u.toString(), headers}
-        }
-        return {url}
-      },
+      transformRequest: mapResourceRequest,
     })
     this._map.on('click', e => {
       const mapContainer = this._map.getContainer()

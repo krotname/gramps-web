@@ -1,6 +1,36 @@
 import {afterEach, describe, it, expect, vi} from 'vitest'
 
-import {localizeOhmStyle} from '../../src/components/GrampsjsMap.js'
+import {
+  localizeOhmStyle,
+  mapResourceRequest,
+} from '../../src/components/GrampsjsMap.js'
+
+describe('map media authorization', () => {
+  afterEach(() => localStorage.removeItem('access_token'))
+
+  it('authorizes media only on the configured API origin', () => {
+    localStorage.setItem('access_token', 'test-token')
+    expect(
+      mapResourceRequest(
+        'http://localhost:5555/api/media/M1/tile/0/0/0?jwt=old',
+        'Tile'
+      )
+    ).toEqual({
+      url: 'http://localhost:5555/api/media/M1/tile/0/0/0',
+      headers: {Authorization: 'Bearer test-token'},
+    })
+    const external = 'https://tiles.openfreemap.org/api/media/M1/tile/0/0/0'
+    expect(mapResourceRequest(external, 'Tile')).toEqual({url: external})
+  })
+
+  it('leaves public map styles and tiles unauthenticated', () => {
+    localStorage.setItem('access_token', 'test-token')
+    const tile = 'https://tiles.openfreemap.org/planet/0/0/0.pbf'
+    expect(mapResourceRequest(tile, 'Tile')).toEqual({url: tile})
+    const style = 'https://www.openhistoricalmap.org/map-styles/main/main.json'
+    expect(mapResourceRequest(style, 'Style')).toEqual({url: style})
+  })
+})
 
 const STYLE = {
   version: 8,
