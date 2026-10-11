@@ -33,6 +33,44 @@ export class FamilyGraph {
     return [...this._people.values()]
   }
 
+  // Selects relatives by parent, child or partner steps. Only fetched people
+  // participate, so this also respects the API's visibility restrictions.
+  withinSeparation(grampsId, separation) {
+    const root = this.personByGrampsId(grampsId)
+    if (!root) return []
+    const neighbours = new Map(
+      this.people().map(person => [person.handle, new Set()])
+    )
+    const connect = (left, right) => {
+      if (!neighbours.has(left) || !neighbours.has(right)) return
+      neighbours.get(left).add(right)
+      neighbours.get(right).add(left)
+    }
+    for (const family of this._families.values()) {
+      const {father_handle: father, mother_handle: mother} = family
+      connect(father, mother)
+      for (const child of family.child_ref_list ?? []) {
+        connect(father, child.ref)
+        connect(mother, child.ref)
+      }
+    }
+    const selected = new Set([root.handle])
+    let frontier = [root.handle]
+    for (let depth = 0; depth < separation && frontier.length; depth += 1) {
+      const next = []
+      for (const handle of frontier) {
+        for (const neighbour of neighbours.get(handle)) {
+          if (!selected.has(neighbour)) {
+            selected.add(neighbour)
+            next.push(neighbour)
+          }
+        }
+      }
+      frontier = next
+    }
+    return this.people().filter(person => selected.has(person.handle))
+  }
+
   // Returns the person with the given handle, or undefined if not fetched
   person(handle) {
     return this._people.get(handle)

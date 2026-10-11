@@ -101,6 +101,70 @@ function makeView(settings = {}) {
 }
 
 describe('GrampsjsViewTree', () => {
+  it('builds relationships when the optional server filter is missing', async () => {
+    const {view, apiGet} = makeView({relationshipChartAnc: 1})
+    view._currentTabId = 3
+    const people = [
+      {
+        handle: 'R',
+        gramps_id: 'I1',
+        extended: {
+          families: [
+            {
+              handle: 'F',
+              father_handle: 'R',
+              mother_handle: 'S',
+              child_ref_list: [{ref: 'K'}],
+            },
+          ],
+        },
+      },
+      {handle: 'S'},
+      {handle: 'K'},
+      {handle: 'unrelated'},
+    ]
+    apiGet
+      .mockResolvedValueOnce({error: 'Not Found', errorDetail: {status: 404}})
+      .mockResolvedValueOnce({data: people})
+    await view._fetchData(
+      chartDataUrl(view.definition, 'I1', view.settingValues, 'en')
+    )
+    expect(apiGet).toHaveBeenCalledTimes(2)
+    expect(apiGet.mock.calls[1][0]).not.toContain('rules=')
+    expect(apiGet.mock.calls[1][0]).toContain('parent_family_list')
+    expect(view._data.map(p => p.handle)).toEqual(['R', 'S', 'K'])
+    expect(view.error).toBe(false)
+    expect(view.loading).toBe(false)
+  })
+
+  it('does not replace authorization failures with a relationship fallback', async () => {
+    const {view, apiGet} = makeView()
+    view._currentTabId = 3
+    apiGet.mockResolvedValue({error: 'Forbidden', errorDetail: {status: 403}})
+    await view._fetchData('people/?rules=filter')
+    expect(apiGet).toHaveBeenCalledOnce()
+    expect(view.error).toBe(true)
+    expect(view._errorMessage).toBe('Forbidden')
+  })
+
+  it('ignores relationship fallback data after the selected person changes', async () => {
+    const {view, apiGet} = makeView()
+    view._currentTabId = 3
+    const fallback = deferred()
+    apiGet
+      .mockResolvedValueOnce({error: 'Not Found', errorDetail: {status: 404}})
+      .mockReturnValueOnce(fallback.promise)
+      .mockResolvedValueOnce({data: [{handle: 'new', gramps_id: 'I2'}]})
+    const first = view._fetchData('people/?rules=filter')
+    await Promise.resolve()
+    view.grampsId = 'I2'
+    await view._fetchData('people/?rules=new')
+    fallback.resolve({data: [{handle: 'old', gramps_id: 'I1'}]})
+    await first
+    expect(view._data).toEqual([{handle: 'new', gramps_id: 'I2'}])
+    expect(view.loading).toBe(false)
+  })
+
   it('fetches again only when the request changes', () => {
     const settings = {}
     const {view, apiGet} = makeView(settings)
