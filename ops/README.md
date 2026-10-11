@@ -8,6 +8,12 @@ The API command is gunicorn --bind 127.0.0.1:5000 'gateway.runtime:create()'. Th
 
 The editor is in Russian. People, events, family links, notes and sources are saved through the GEDCOM editor. The built-in Gramps views use the derived database. Only the owner/admin can download or mutate the master and use the publication queue.
 
+## Private media
+
+The native API serves files from `GRAMPS_RUNTIME_DATA/media`; remote Geni URLs in a GEDCOM are not downloadable media files for this API. Export the authenticated media API list to a private operator manifest. Run `python -m gateway.media_import --manifest <private-manifest.json> --media-dir <staging-media> --map <staging-map.json>` on the operator machine. The importer accepts bounded HTTPS downloads only from media.geni.com, checks file signatures and transport length, deduplicates repeated references, and reuses valid existing files. It never changes the GEDCOM or prints signed source URLs.
+
+Inspect every staged file and PDF page before transferring it. Act-record copies and their full OCR remain on the operator machine; remove those entries from the approved manifest. Install only the approved files under `GRAMPS_RUNTIME_DATA/media` and the completed map at `MASTER_MEDIA_MAP`. Request the authenticated owner `/api/master/project/` endpoint, then read back every file/thumbnail and the unchanged canonical revision. Renewed Geni URLs use the same local filename. Repeat this procedure for newly added media; a saved URL alone does not prove an available image.
+
 ## Publication
 
 The publication button freezes the current GEDCOM revision; ordinary saves do not update external sites. The queue records books and Geni independently. Repeating the request for a revision does not duplicate it. At most ten frozen revisions are retained; unfinished work is never discarded to make room.

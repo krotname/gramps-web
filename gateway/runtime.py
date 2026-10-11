@@ -26,8 +26,12 @@ def create():
         STATIC_PATH="/app/static",MEDIA_BASE_DIR=str(data/"media"),REPORT_DIR=str(data/"reports"),
         EXPORT_DIR=str(data/"exports"),REGISTRATION_DISABLED=True,DISABLE_TELEMETRY=True,
         BASE_URL=os.environ["MASTER_ORIGIN"])
-    for field in ["REQUEST_CACHE_CONFIG","THUMBNAIL_CACHE_CONFIG","PERSISTENT_CACHE_CONFIG"]:
+    for field in ["REQUEST_CACHE_CONFIG","PERSISTENT_CACHE_CONFIG"]:
         config[field]={"CACHE_TYPE":"FileSystemCache","CACHE_DIR":str(data/field.lower()),"CACHE_DEFAULT_TIMEOUT":0}
+    # The native thumbnail cache retains missing-file responses when an imported
+    # Media has no checksum. The browser already caches successful thumbnails;
+    # keep server misses retryable after the operator restores a local file.
+    config["THUMBNAIL_CACHE_CONFIG"]={"CACHE_TYPE":"NullCache"}
     for directory in ["media","reports","exports"]:
         (data/directory).mkdir(exist_ok=True)
     app=create_app(config,config_from_env=False)

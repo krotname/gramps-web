@@ -130,7 +130,7 @@ class Handler(BaseHTTPRequestHandler):
                     result=store.commit(payload.get("revision"),payload.get("key"),payload.get("operations"),callback)
                     return self.reply(200 if result["projection"]=="ready" else 202,result)
                 if route in {"/api/master/retry/", "/api/master/project/"}:
-                    result=store.retry(callback)
+                    result=store.refresh(callback) if route=="/api/master/project/" else store.retry(callback)
                     return self.reply(200 if result["projection"]=="ready" else 202,result)
                 if route=="/api/master/publish/":return self.reply(202,store.publish(payload.get("revision")))
             return self.reply(404,{"message":"Unknown master route"})

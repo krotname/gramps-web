@@ -79,6 +79,32 @@ class GatewayTest(unittest.TestCase):
                 self.assertEqual(status, 202)
                 self.assertEqual(json.loads(data)["projection"], "pending")
 
+    def test_project_refreshes_ready_objects_without_changing_canonical_data(self):
+        store = self.gateway.store
+        store.retry(lambda *_: None)
+        before = store.file.read_bytes()
+        with patch("gateway.server.project") as projection:
+            self.assertEqual(self.request("/api/master/retry/", "owner", {})[0], 200)
+            projection.assert_not_called()
+            status, data = self.request("/api/master/project/", "owner", {})
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(data)["projection"], "ready")
+            projection.assert_called_once()
+        self.assertEqual(store.file.read_bytes(), before)
+
+    def test_failed_refresh_is_durable_and_retryable(self):
+        store = self.gateway.store
+        store.retry(lambda *_: None)
+        before = store.file.read_bytes()
+        with patch("gateway.server.project", side_effect=RuntimeError("Media unavailable")):
+            self.assertEqual(self.request("/api/master/project/", "owner", {})[0], 202)
+        self.assertEqual(store.status()["projection"], "pending")
+        with patch("gateway.server.project") as projection:
+            self.assertEqual(self.request("/api/master/retry/", "owner", {})[0], 200)
+            projection.assert_called_once()
+        self.assertEqual(store.status()["projection"], "ready")
+        self.assertEqual(store.file.read_bytes(), before)
+
     def test_family_list_keeps_explicit_parent_roles(self):
         status, data = self.request("/api/master/families/", "owner")
         self.assertEqual(status, 200)
