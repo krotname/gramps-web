@@ -12,7 +12,11 @@ class Upstream(BaseHTTPRequestHandler):
     def log_message(self,*args):pass
     def do_GET(self):
         token=self.headers.get('Authorization','')
-        if self.path=='/api/users/-/':
+        if self.path == '/api/learning/session/':
+            role = {'Bearer owner': 4, 'Bearer student': 3, 'Bearer guest': 0}.get(token, -1)
+            status = 200 if role >= 0 else 401
+            data = json.dumps({'role': role, 'actor': {'issuer': 'https://auth.example', 'subject': token[7:], 'role': role}}).encode()
+        elif self.path=='/api/users/-/':
             role=4 if token=='Bearer owner' else 0
             status=200 if token in {'Bearer owner','Bearer guest'} else 401
             data=json.dumps({'role':role}).encode()
@@ -165,6 +169,40 @@ class GatewayTest(unittest.TestCase):
     def test_only_owner_can_request_search_index_maintenance(self):
         self.assertEqual(self.request('/api/search/index/', 'owner', {})[0], 200)
         self.assertEqual(self.request('/api/search/index/', 'guest', {})[0], 403)
+
+
+class TeachingGatewayTest(unittest.TestCase):
+    tearDown = GatewayTest.tearDown
+    request = GatewayTest.request
+
+    def setUp(self):
+        GatewayTest.setUp(self)
+        self.gateway.learning = True
+        self.gateway.store.retry(lambda *args: None)
+
+    def test_student_writes_are_audited_but_publication_and_export_require_curator(self):
+        before = self.gateway.store.revision
+        operations = [{'op': 'person', 'xref': 'I1', 'append_notes': ['Synthetic classroom note']}]
+        with patch('gateway.server.project'):
+            status, body = self.request('/api/master/commit/', 'student', {'revision': before, 'key': 'student-write', 'operations': operations})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(self.gateway.store.learning_audit()[0]['actor']['subject'], 'student')
+        self.assertEqual(self.request('/api/master/approve-demo/', 'student', {})[0], 403)
+        self.assertEqual(self.request('/api/master/download/', 'student')[0], 403)
+        self.assertEqual(self.request('/api/master/people/', 'guest')[0], 403)
+        self.assertEqual(self.request('/api/master/people/')[0], 401)
+        self.assertEqual(self.request('/api/users/-/', 'owner', {})[0], 403)
+        self.assertEqual(self.request('/api/master/publish/', 'owner', {})[0], 403)
+
+    def test_only_approved_snapshot_is_public(self):
+        self.assertEqual(self.request('/api/learning/public/')[0], 503)
+        revision = self.gateway.store.revision
+        self.assertEqual(self.request('/api/master/approve-demo/', 'owner', {'revision': revision})[0], 400)
+        self.assertEqual(self.request('/api/master/approve-demo/', 'owner', {'revision': revision, 'synthetic_only': True})[0], 200)
+        status, body = self.request('/api/learning/public/')
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)['revision'], revision)
+        self.assertEqual(self.request('/demo/')[0], 200)
 
 
 class ProjectionTest(unittest.TestCase):

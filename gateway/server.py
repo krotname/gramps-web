@@ -33,6 +33,12 @@ class Gateway(ThreadingHTTPServer):
     daemon_threads=True
     def __init__(self,address,folder,upstream,origin):
         self.store=Store(folder);self.upstream=upstream.rstrip("/");self.origin=origin
+        self.learning=os.getenv("SEMARHIV_LEARNING")=="true"
+        if self.learning:
+            if os.getenv('MASTER_WORKER_CONFIG'):
+                raise ValueError("External publication worker is forbidden in the teaching deployment")
+            if not self.store.file.exists():
+                self.store.initialize((Path(__file__).parent / "learning_assets/seed.ged").read_bytes())
         super().__init__(address,Handler)
         self.publisher=None
         if os.getenv('MASTER_WORKER_CONFIG'):
@@ -63,7 +69,7 @@ class Handler(BaseHTTPRequestHandler):
         size=int(self.headers.get("Content-Length","0"))
         if not 0<=size<=maximum:raise InvalidGedcom("Request is too large")
         return self.rfile.read(size)
-    def auth(self,owner=False):
+    def auth(self,owner=False,editor=False):
         header=self.headers.get("Authorization","")
         route=urlsplit(self.path).path
         if not header and not owner and self.command in {'GET','HEAD'} and re.match(r'^/api/(media/|maps/|exporters/)',route):
@@ -72,9 +78,11 @@ class Handler(BaseHTTPRequestHandler):
         if not header.startswith("Bearer ") or len(header)>16384:raise HTTPError("",401,"Sign in",None,None)
         token=header[7:]
         api=API(self.server.upstream,token)
-        user,_=api.request("GET","/api/users/-/")
+        user,_=api.request("GET","/api/learning/session/" if self.server.learning else "/api/users/-/")
         if owner and user.get("role",0)<4:raise HTTPError("",403,"Owner access required",None,None)
+        if editor and user.get("role",0)<3:raise HTTPError("",403,"Editor access required",None,None)
         if user.get("role",-1)<0:raise HTTPError("",403,"Account is disabled",None,None)
+        self.actor=user.get("actor")
         return api
     def route(self):
         parsed=urlsplit(self.path);route=parsed.path
@@ -83,9 +91,37 @@ class Handler(BaseHTTPRequestHandler):
             origin=self.headers.get("Origin")
             if origin and origin!=self.server.origin:raise HTTPError("",403,"Origin mismatch",None,None)
         if route=="/healthz":return self.reply(200,{"status":"ok"})
+        if self.server.learning:
+            if self.command in {"GET","HEAD"} and route=="/config.js":
+                config={"gedcomMaster":True,"learningMode":True,"defaultLanguage":"ru","hideRegisterLink":True,"hideDNALink":True}
+                return self.reply(200,("window.grampsjsConfig="+json.dumps(config)+";").encode(),"text/javascript")
+            if self.command in {"GET","HEAD"} and route in {"/demo","/demo/"}:
+                return self.reply(200,(Path(__file__).parent/"learning_assets/demo.html").read_bytes(),"text/html;charset=utf-8")
+            if self.command in {"GET","HEAD"} and route in {"/learning-assets/demo.css","/learning-assets/demo.js"}:
+                file=Path(__file__).parent/"learning_assets"/route.rsplit("/",1)[1]
+                return self.reply(200,file.read_bytes(),"text/css" if file.suffix==".css" else "text/javascript")
+            if route=="/api/learning/public/":
+                if self.command not in {"GET","HEAD"}:return self.reply(405,{"message":"Read only"})
+                snapshot=self.server.store.learning_snapshot()
+                return self.reply(200,snapshot) if snapshot else self.reply(503,{"message":"Куратор ещё не утвердил учебный снимок"})
+            if route.startswith("/api/users/") and self.command not in {"GET","HEAD"}:
+                return self.reply(403,{"message":"Учётными записями управляет куратор через единый вход"})
         if route.startswith("/api/master/"):
-            api=self.auth(owner=True)
+            shared_read=self.command=="GET" and (route in {"/api/master/status/","/api/master/people/","/api/master/families/","/api/master/books/"} or route.startswith("/api/master/person/"))
+            shared_write=self.command=="POST" and route=="/api/master/commit/"
+            api=self.auth(owner=not(self.server.learning and (shared_read or shared_write)),editor=self.server.learning)
             store=self.server.store
+            if self.server.learning:
+                if not self.actor:raise HTTPError("",401,"Verified identity required",None,None)
+                if route=="/api/master/books/" and self.command=="GET":return self.reply(200,{"books":[],"state":"disabled"})
+                if route.startswith("/api/master/publications/") or route.startswith("/api/master/books/") or route=="/api/master/publish/":
+                    return self.reply(403,{"message":"В учебном контуре внешняя публикация отключена"})
+                if route=="/api/master/learning-audit/" and self.command=="GET":return self.reply(200,store.learning_audit())
+                if route=="/api/master/approve-demo/" and self.command=="POST":
+                    from .learning import public_snapshot
+                    payload=json.loads(self.body())
+                    if payload.get("synthetic_only") is not True:raise InvalidGedcom("Confirm that the reviewed revision contains synthetic data only")
+                    return self.reply(200,store.publish_learning(payload.get("revision"),self.actor,public_snapshot))
             if self.command=="GET":
                 with store.serialized():
                     snapshot=store.file.read_bytes(); snapshot_rev=store.revision
@@ -128,7 +164,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(200,store.publication_result(result_route[1],payload.get("target"),payload.get("state"),payload.get("detail")))
                 callback=lambda tree,ops:project(api,store.folder,tree,ops)
                 if route=="/api/master/commit/":
-                    result=store.commit(payload.get("revision"),payload.get("key"),payload.get("operations"),callback)
+                    result=store.commit(payload.get("revision"),payload.get("key"),payload.get("operations"),callback,actor=self.actor if self.server.learning else None)
                     return self.reply(200 if result["projection"]=="ready" else 202,result)
                 if route in {"/api/master/retry/", "/api/master/project/"}:
                     result=store.refresh(callback) if route=="/api/master/project/" else store.retry(callback)
@@ -136,7 +172,7 @@ class Handler(BaseHTTPRequestHandler):
                 if route=="/api/master/publish/":return self.reply(202,store.publish(payload.get("revision")))
             return self.reply(404,{"message":"Unknown master route"})
         if route.startswith("/api/"):
-            public=route in PUBLIC_AUTH or self.command in PUBLIC_OIDC.get(route,set())
+            public=route in PUBLIC_AUTH or self.command in PUBLIC_OIDC.get(route,set()) or (route=="/api/oidc/callback/custom" and self.command=="GET")
             config_write=(route.rstrip('/')=='/api/trees/-/config' and self.command in {'PUT','POST'}) or (route.rstrip('/')=='/api/search/index' and self.command=='POST')
             translation_read=self.command=='POST' and re.fullmatch(r'/api/translations/[A-Za-z][A-Za-z0-9_-]{0,31}/?',route) is not None
             if not public:self.auth(owner=config_write)

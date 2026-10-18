@@ -327,6 +327,21 @@ export class GrampsJs extends LitElement {
 
   render() {
     return html`
+      ${this.appState.frontendConfig?.learningMode
+        ? html`<nav
+              aria-label="Проект"
+              style="padding:12px 24px;background:#f6f1e8;display:flex;flex-wrap:wrap;gap:16px"
+            >
+              <a href="https://semarhiv.ru/">Цифровая семейная память</a>
+              <a href="https://lms.semarhiv.ru/">Учебный кабинет</a>
+              <a href="/demo/">Открытый пример</a>
+              <a href="https://semarhiv.ru/programma/">Программа</a>
+            </nav>
+            <p style="padding:0 24px">
+              Учебное дерево: используйте только вымышленные данные. Публичный
+              пример обновляет куратор.
+            </p>`
+        : html``}
       ${this.loadingState === LOADING_STATE_READY &&
       this.appState.frontendConfig?.gedcomMaster
         ? html`<grampsjs-master-editor

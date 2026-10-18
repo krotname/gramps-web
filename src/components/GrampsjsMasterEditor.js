@@ -19,6 +19,7 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       books: {state: true},
       kind: {state: true},
       families: {state: true},
+      audit: {state: true},
     }
   }
 
@@ -73,6 +74,7 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
     this.books = []
     this.kind = 'person'
     this.families = []
+    this.audit = []
   }
 
   updated(changed) {
@@ -101,6 +103,34 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       const b = await this.get('/api/master/books/')
       this.books = b.books || []
       this.loaded = true
+    } catch (e) {
+      this.message = e.message
+    }
+  }
+
+  async approveDemo() {
+    if (!this.renderRoot.querySelector('#synthetic-confirm')?.checked) {
+      this.message =
+        'Подтвердите, что все данные вымышлены и готовы к открытому показу.'
+      return
+    }
+    this.busy = true
+    try {
+      await this.post('/api/master/approve-demo/', {
+        revision: this.status.revision,
+        synthetic_only: true,
+      })
+      this.message = 'Публичный снимок обновлён. Проверьте открытый пример.'
+    } catch (e) {
+      this.message = e.message
+    } finally {
+      this.busy = false
+    }
+  }
+
+  async showAudit() {
+    try {
+      this.audit = await this.get('/api/master/learning-audit/')
     } catch (e) {
       this.message = e.message
     }
@@ -410,7 +440,16 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
   render() {
     if (!this.appState.permissions?.canEditMaster) return html``
     return html`<details>
-      <summary>${this._('Tree editor and family books')}</summary>
+      <summary>
+        ${this.appState.frontendConfig?.learningMode
+          ? 'Редактор учебного дерева'
+          : this._('Tree editor and family books')}
+      </summary>
+      <md-filled-button @click=${this.refresh} ?disabled=${this.busy}>
+        ${this.appState.frontendConfig?.learningMode
+          ? 'Обновить дерево после изменений другого участника'
+          : this._('Refresh')}
+      </md-filled-button>
       <p>
         ${this._(
           'The master format is GEDCOM 5.5.1. Changes are saved to the tree file.'
@@ -524,23 +563,57 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
             </md-filled-button>
           </form>`
         : html``}
-      ${this.status.projection === 'pending'
+      ${this.status.projection === 'pending' &&
+      (!this.appState.frontendConfig?.learningMode ||
+        this.appState.permissions.canCurateLearning)
         ? html`<p>${this._('Gramps update is pending a retry.')}</p>
             <md-filled-button @click=${this.retry} ?disabled=${this.busy}>
               ${this._('Retry update')}
             </md-filled-button>`
         : html``}
-      <md-filled-button
-        @click=${this.publish}
-        ?disabled=${this.busy || this.status.projection !== 'ready'}
-      >
-        ${this._('Update Geni and books')}</md-filled-button
-      ><md-filled-button
-        @click=${() =>
-          this.download('/api/master/download/', 'export-Forest.ged')}
-      >
-        ${this._('Download GEDCOM')}
-      </md-filled-button>
+      ${!this.appState.frontendConfig?.learningMode
+        ? html`<md-filled-button
+              @click=${this.publish}
+              ?disabled=${this.busy || this.status.projection !== 'ready'}
+            >
+              ${this._('Update Geni and books')}</md-filled-button
+            ><md-filled-button
+              @click=${() =>
+                this.download('/api/master/download/', 'export-Forest.ged')}
+            >
+              ${this._('Download GEDCOM')}
+            </md-filled-button>`
+        : html``}
+      ${this.appState.frontendConfig?.learningMode &&
+      this.appState.permissions.canCurateLearning
+        ? html`<section aria-label="Куратор">
+            <p>
+              Публичный снимок не меняется при работе участников. Перед
+              обновлением проверьте дерево и источники.
+            </p>
+            <label
+              ><input type="checkbox" id="synthetic-confirm" />Все данные
+              вымышлены и проверены для открытого показа</label
+            >
+            <md-filled-button
+              @click=${this.approveDemo}
+              ?disabled=${this.busy || this.status.projection !== 'ready'}
+              >Обновить публичный пример</md-filled-button
+            >
+            <md-filled-button @click=${this.showAudit}
+              >Журнал изменений</md-filled-button
+            >
+            <ul>
+              ${this.audit.map(
+                entry =>
+                  html`<li>
+                    ${entry.created}: ${entry.actor.subject} —
+                    ${entry.before_rev} → ${entry.revision}
+                  </li>`
+              )}
+            </ul>
+          </section>`
+        : html``}
       <p class="message" role="status">${this.message}</p>
       ${(this.status.publications || [])
         .slice(0, 1)
