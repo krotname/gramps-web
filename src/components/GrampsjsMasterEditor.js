@@ -19,6 +19,8 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       books: {state: true},
       kind: {state: true},
       families: {state: true},
+      audit: {state: true},
+      confirmedRevision: {state: true},
     }
   }
 
@@ -73,6 +75,8 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
     this.books = []
     this.kind = 'person'
     this.families = []
+    this.audit = []
+    this.confirmedRevision = null
   }
 
   updated(changed) {
@@ -94,6 +98,9 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
   }
 
   async refresh() {
+    this.confirmedRevision = null
+    this.record = null
+    this.form = {}
     try {
       this.status = await this.get('/api/master/status/')
       this.people = await this.get('/api/master/people/')
@@ -101,6 +108,38 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       const b = await this.get('/api/master/books/')
       this.books = b.books || []
       this.loaded = true
+    } catch (e) {
+      this.message = e.message
+    }
+  }
+
+  async approveDemo() {
+    if (this.confirmedRevision !== this.status.revision) {
+      this.message = this._(
+        'Confirm that all data is fictional and ready for public display.'
+      )
+      return
+    }
+    this.busy = true
+    try {
+      await this.post('/api/master/approve-demo/', {
+        revision: this.status.revision,
+        synthetic_only: true,
+      })
+      this.message = this._(
+        'Public snapshot updated. Check the public example.'
+      )
+    } catch (e) {
+      this.message = e.message
+    } finally {
+      this.confirmedRevision = null
+      this.busy = false
+    }
+  }
+
+  async showAudit() {
+    try {
+      this.audit = await this.get('/api/master/learning-audit/')
     } catch (e) {
       this.message = e.message
     }
@@ -409,8 +448,16 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
 
   render() {
     if (!this.appState.permissions?.canEditMaster) return html``
+    const title = this.appState.frontendConfig?.learningMode
+      ? this._('Learning tree editor')
+      : this._('Tree editor and family books')
     return html`<details>
-      <summary>${this._('Tree editor and family books')}</summary>
+      <summary>${title}</summary>
+      <md-filled-button @click=${this.refresh} ?disabled=${this.busy}>
+        ${this.appState.frontendConfig?.learningMode
+          ? this._('Refresh the tree after another participant makes changes')
+          : this._('Refresh')}
+      </md-filled-button>
       <p>
         ${this._(
           'The master format is GEDCOM 5.5.1. Changes are saved to the tree file.'
@@ -524,23 +571,68 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
             </md-filled-button>
           </form>`
         : html``}
-      ${this.status.projection === 'pending'
+      ${this.status.projection === 'pending' &&
+      (!this.appState.frontendConfig?.learningMode ||
+        this.appState.permissions.canCurateLearning)
         ? html`<p>${this._('Gramps update is pending a retry.')}</p>
             <md-filled-button @click=${this.retry} ?disabled=${this.busy}>
               ${this._('Retry update')}
             </md-filled-button>`
         : html``}
-      <md-filled-button
-        @click=${this.publish}
-        ?disabled=${this.busy || this.status.projection !== 'ready'}
-      >
-        ${this._('Update Geni and books')}</md-filled-button
-      ><md-filled-button
-        @click=${() =>
-          this.download('/api/master/download/', 'export-Forest.ged')}
-      >
-        ${this._('Download GEDCOM')}
-      </md-filled-button>
+      ${!this.appState.frontendConfig?.learningMode
+        ? html`<md-filled-button
+              @click=${this.publish}
+              ?disabled=${this.busy || this.status.projection !== 'ready'}
+            >
+              ${this._('Update Geni and books')}</md-filled-button
+            ><md-filled-button
+              @click=${() =>
+                this.download('/api/master/download/', 'export-Forest.ged')}
+            >
+              ${this._('Download GEDCOM')}
+            </md-filled-button>`
+        : html``}
+      ${this.appState.frontendConfig?.learningMode &&
+      this.appState.permissions.canCurateLearning
+        ? html`<section aria-label=${this._('Curator')}>
+            <p>
+              ${this._(
+                'Participant edits do not change the public snapshot. Review the tree and sources before updating it.'
+              )}
+            </p>
+            <label
+              ><input
+                type="checkbox"
+                id="synthetic-confirm"
+                .checked=${this.confirmedRevision === this.status.revision}
+                @change=${e => {
+                  this.confirmedRevision = e.target.checked
+                    ? this.status.revision
+                    : null
+                }}
+              />${this._(
+                'All data is fictional and reviewed for public display'
+              )}</label
+            >
+            <md-filled-button
+              @click=${this.approveDemo}
+              ?disabled=${this.busy || this.status.projection !== 'ready'}
+              >${this._('Update public example')}</md-filled-button
+            >
+            <md-filled-button @click=${this.showAudit}
+              >${this._('Change history')}</md-filled-button
+            >
+            <ul>
+              ${this.audit.map(
+                entry =>
+                  html`<li>
+                    ${entry.created}: ${entry.actor.subject} —
+                    ${entry.before_rev} → ${entry.revision}
+                  </li>`
+              )}
+            </ul>
+          </section>`
+        : html``}
       <p class="message" role="status">${this.message}</p>
       ${(this.status.publications || [])
         .slice(0, 1)

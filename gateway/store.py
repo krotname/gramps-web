@@ -29,6 +29,12 @@ class Store:
                 revision TEXT PRIMARY KEY, state TEXT, snapshot BLOB,
                 books_state TEXT DEFAULT 'pending', geni_state TEXT DEFAULT 'pending',
                 detail TEXT DEFAULT '')""")
+            db.execute("""CREATE TABLE IF NOT EXISTS learning_audit(
+                key TEXT PRIMARY KEY, actor TEXT NOT NULL, before_rev TEXT, revision TEXT NOT NULL,
+                created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS learning_snapshot(
+                id INTEGER PRIMARY KEY CHECK(id=1), revision TEXT NOT NULL, payload TEXT NOT NULL,
+                actor TEXT NOT NULL, created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
         self.recover()
 
     @contextlib.contextmanager
@@ -105,7 +111,7 @@ class Store:
         return {"revision": self.revision, "projection": "pending" if pending else "ready",
                 "pending": [dict(r) for r in pending], "publications": [dict(r) for r in published]}
 
-    def commit(self, expected, key, operations, project):
+    def commit(self, expected, key, operations, project, actor=None):
         if not isinstance(key, str) or not 1 <= len(key) <= 128:
             raise InvalidGedcom("An idempotency key is required")
         if not isinstance(operations, list) or not 1 <= len(operations) <= 100:
@@ -117,6 +123,10 @@ class Store:
                 if old:
                     if old["operations"] != payload:
                         raise Conflict("Idempotency key belongs to a different edit")
+                    if actor is not None:
+                        audit = db.execute("SELECT actor FROM learning_audit WHERE key=?", (key,)).fetchone()
+                        if audit is None or audit[0] != json.dumps(actor, sort_keys=True):
+                            raise Conflict("Idempotency key belongs to a different participant")
                     return {"revision": old["revision"], "projection": old["projection"], "error": old["error"]}
                 if expected != self.revision:
                     raise Conflict("The tree changed; reload before saving")
@@ -131,6 +141,9 @@ class Store:
                 revision = hashlib.sha256(data).hexdigest()
                 db.execute("INSERT INTO commits VALUES(?,?,?,?,?,?,?)",
                            (key, expected, revision, payload, data, "prepared", ""))
+                if actor is not None:
+                    db.execute("INSERT INTO learning_audit(key,actor,before_rev,revision) VALUES(?,?,?,?)",
+                               (key, json.dumps(actor, sort_keys=True), expected, revision))
             self.atomic(data)
             with self.connection() as db:
                 db.execute("UPDATE commits SET projection='pending' WHERE key=?", (key,))
@@ -138,6 +151,31 @@ class Store:
             with self.connection() as db:
                 db.execute("DELETE FROM commits WHERE rowid NOT IN (SELECT rowid FROM commits ORDER BY rowid DESC LIMIT 1000) AND projection='ready'")
             return result
+
+    def learning_audit(self):
+        with self.connection() as db:
+            return [{**dict(row), "actor": json.loads(row["actor"])} for row in db.execute(
+                "SELECT key,actor,before_rev,revision,created FROM learning_audit ORDER BY rowid DESC LIMIT 100")]
+
+    def publish_learning(self, expected, actor, render):
+        with self.serialized(), self.connection() as db:
+            if expected != self.revision:
+                raise Conflict("The tree changed; review the current revision before publishing")
+            if db.execute("SELECT 1 FROM commits WHERE projection IN ('prepared','pending')").fetchone():
+                raise Conflict("Repair the pending projection before publishing")
+            payload = render(Gedcom(self.file.read_bytes()))
+            db.execute("INSERT INTO learning_snapshot(id,revision,payload,actor) VALUES(1,?,?,?) "
+                       "ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,payload=excluded.payload,actor=excluded.actor,created=CURRENT_TIMESTAMP",
+                       (expected, json.dumps(payload, ensure_ascii=False), json.dumps(actor, sort_keys=True)))
+            return {"revision": expected, "published": True}
+
+    def learning_snapshot(self):
+        with self.connection() as db:
+            row = db.execute("SELECT revision,payload,created FROM learning_snapshot WHERE id=1").fetchone()
+            if row is None:
+                return None
+            return {"revision": row["revision"], "published_at": row["created"], "synthetic": True,
+                    **json.loads(row["payload"])}
 
     def _project(self, key, tree, operations, project):
         phase, error = "ready", ""

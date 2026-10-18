@@ -478,5 +478,20 @@
   "Projection updated.": "Проекция обновлена.",
   "Gramps update is still pending.": "Обновление Gramps ещё ожидает повтора.",
   "Ready": "Готово",
-  "Failed": "Ошибка"
+  "Failed": "Ошибка",
+  "Learning project": "Проект",
+  "Digital family memory": "Цифровая семейная память",
+  "Learning portal": "Учебный кабинет",
+  "Public example": "Открытый пример",
+  "Learning programme": "Программа",
+  "Learning tree: use fictional data only. The curator updates the public example.": "Учебное дерево: используйте только вымышленные данные. Публичный пример обновляет куратор.",
+  "Confirm that all data is fictional and ready for public display.": "Подтвердите, что все данные вымышлены и готовы к открытому показу.",
+  "Public snapshot updated. Check the public example.": "Публичный снимок обновлён. Проверьте открытый пример.",
+  "Learning tree editor": "Редактор учебного дерева",
+  "Refresh the tree after another participant makes changes": "Обновить дерево после изменений другого участника",
+  "Curator": "Куратор",
+  "Participant edits do not change the public snapshot. Review the tree and sources before updating it.": "Публичный снимок не меняется при работе участников. Перед обновлением проверьте дерево и источники.",
+  "All data is fictional and reviewed for public display": "Все данные вымышлены и проверены для открытого показа",
+  "Update public example": "Обновить публичный пример",
+  "Change history": "Журнал изменений"
 }

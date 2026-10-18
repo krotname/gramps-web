@@ -26,6 +26,24 @@ function makeFakeJwt(claims) {
 // Far-future expiry, so Auth treats the token as fresh and skips refreshing.
 const exp = 9999999999
 
+describe('central session revocation', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    localStorage.clear()
+  })
+  it('clears native credentials when the refresh endpoint returns 401', async () => {
+    localStorage.setItem('refresh_token', makeFakeJwt({exp}))
+    localStorage.setItem('access_token', makeFakeJwt({exp}))
+    const auth = new Auth()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({status: 401}))
+    await expect(auth.refreshAuthTokens()).rejects.toThrow(
+      'Failed refreshing token'
+    )
+    expect(localStorage.getItem('refresh_token')).to.be.null
+    expect(localStorage.getItem('access_token')).to.be.null
+  })
+})
+
 describe('apiGet authentication', () => {
   beforeEach(() => {
     vi.stubGlobal(

@@ -427,12 +427,17 @@ export function appStateUpdatePermissions(appState) {
     canAdd:
       !appState.frontendConfig?.gedcomMaster &&
       rawPermissions.includes('AddObject'),
-    canEditMaster: rawPermissions.includes('EditOtherUser'),
+    canEditMaster: rawPermissions.includes(
+      appState.frontendConfig?.learningMode ? 'EditObject' : 'EditOtherUser'
+    ),
+    canCurateLearning: rawPermissions.includes('EditOtherUser'),
     canEdit:
       !appState.frontendConfig?.gedcomMaster &&
       rawPermissions.includes('EditObject'),
     canViewPrivate: rawPermissions.includes('ViewPrivate'),
-    canManageUsers: rawPermissions.includes('EditOtherUser'),
+    canManageUsers:
+      !appState.frontendConfig?.learningMode &&
+      rawPermissions.includes('EditOtherUser'),
     canUseChat: rawPermissions.includes('UseChat'),
     canUpgradeTree: rawPermissions.includes('UpgradeSchema'),
     canEditTree: rawPermissions.includes('EditTree'),

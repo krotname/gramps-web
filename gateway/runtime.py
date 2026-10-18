@@ -34,6 +34,13 @@ def create():
       "CACHE_DIR":str(data/"thumbnail_cache_config"),"CACHE_DEFAULT_TIMEOUT":60}
     for directory in ["media","reports","exports"]:
         (data/directory).mkdir(exist_ok=True)
+    learning = os.environ.get("SEMARHIV_LEARNING") == "true"
+    if learning:
+        config.update(OIDC_ENABLED=True, OIDC_DISABLE_LOCAL_AUTH=True, OIDC_ISSUER=os.environ["OIDC_ISSUER"],
+            OIDC_CLIENT_ID=os.environ["OIDC_CLIENT_ID"], OIDC_CLIENT_SECRET=os.environ["OIDC_CLIENT_SECRET"],
+            OIDC_NAME="Цифровая семейная память", OIDC_SCOPES="openid email profile", OIDC_PKCE=True,
+            OIDC_GROUP_OWNER="curators", OIDC_GROUP_EDITOR="students", OIDC_ROLE_CLAIM="groups",
+            SESSION_COOKIE_SECURE=True, SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
     app=create_app(config,config_from_env=False)
     tree_id=WebDbManager(name=config["TREE"]).dirname
     with app.app_context():
@@ -47,6 +54,9 @@ def create():
             add_user(name=name,password=password,role=4,tree=tree_id)
         elif existing.role<4 or existing.tree!=tree_id:
             raise ValueError("Configured owner account does not match this tree")
+    if learning:
+        from .learning_sessions import install
+        install(app, data)
     return app
 
 if __name__=="__main__":

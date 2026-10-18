@@ -477,5 +477,20 @@
   "Projection updated.": "Projection updated.",
   "Gramps update is still pending.": "Gramps update is still pending.",
   "Ready": "Ready",
-  "Failed": "Failed"
+  "Failed": "Failed",
+  "Learning project": "Learning project",
+  "Digital family memory": "Digital family memory",
+  "Learning portal": "Learning portal",
+  "Public example": "Public example",
+  "Learning programme": "Learning programme",
+  "Learning tree: use fictional data only. The curator updates the public example.": "Learning tree: use fictional data only. The curator updates the public example.",
+  "Confirm that all data is fictional and ready for public display.": "Confirm that all data is fictional and ready for public display.",
+  "Public snapshot updated. Check the public example.": "Public snapshot updated. Check the public example.",
+  "Learning tree editor": "Learning tree editor",
+  "Refresh the tree after another participant makes changes": "Refresh the tree after another participant makes changes",
+  "Curator": "Curator",
+  "Participant edits do not change the public snapshot. Review the tree and sources before updating it.": "Participant edits do not change the public snapshot. Review the tree and sources before updating it.",
+  "All data is fictional and reviewed for public display": "All data is fictional and reviewed for public display",
+  "Update public example": "Update public example",
+  "Change history": "Change history"
 }

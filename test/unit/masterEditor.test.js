@@ -34,6 +34,29 @@ function editor() {
 }
 
 describe('canonical tree editor', () => {
+  it('discards the stale edit and confirmation before refreshing the revision', async () => {
+    const e = editor()
+    e.status = {revision: 'old'}
+    e.confirmedRevision = 'old'
+    vi.spyOn(e, 'get').mockResolvedValue({revision: 'new', books: []})
+    await e.refresh()
+    expect(e.record).to.be.null
+    expect(e.form).to.deep.equal({})
+    expect(e.status.revision).to.equal('new')
+    expect(e.confirmedRevision).to.be.null
+  })
+  it('requires a separate confirmation for each published revision', async () => {
+    const e = editor()
+    e.status = {revision: 'first'}
+    e.confirmedRevision = 'first'
+    const post = vi.spyOn(e, 'post').mockResolvedValue({})
+    await e.approveDemo()
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(e.confirmedRevision).to.be.null
+    e.status = {revision: 'second'}
+    await e.approveDemo()
+    expect(post).toHaveBeenCalledTimes(1)
+  })
   it('downloads GEDCOM without triggering publication', () => {
     const e = editor()
     e.appState.permissions = {canEditMaster: true}
