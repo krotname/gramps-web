@@ -1,6 +1,7 @@
 """Persist the central session behind native Gramps JWTs in the teaching deployment."""
 import base64
 import contextlib
+import hashlib
 import json
 import os
 import secrets
@@ -80,33 +81,65 @@ class Sessions:
                 sid, subject, str(user_id), role, json.dumps(token), time.time() + 8 * 3600))
         return sid
 
-    def validate(self, sid, user_id):
-        # A transaction serializes rotating refresh tokens across processes as well as threads.
+    def read_session(self, sid, user_id):
         with self.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
             row = db.execute("SELECT * FROM sessions WHERE id = ? AND user_id = ?", (sid, str(user_id))).fetchone()
-            if row is None or row["expires"] <= time.time():
-                raise SessionDenied("Session expired")
+        if row is None or row["expires"] <= time.time():
+            raise SessionDenied("Session expired")
+        return row
+
+    @contextlib.contextmanager
+    def refresh_lock(self, sid):
+        import fcntl
+        # Bounded lock stripes coordinate processes and threads only during rotation.
+        # SQLite transactions and normal introspections never hold this network lock.
+        stripe = int.from_bytes(hashlib.sha256(sid.encode()).digest()[:2], "big") % 1024
+        folder = self.path.parent / "session-locks"
+        folder.mkdir(mode=0o700, exist_ok=True)
+        fd = os.open(folder / str(stripe), os.O_CREAT | os.O_RDWR, 0o600)
+        deadline = time.monotonic() + 7
+        try:
+            while True:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise SessionDenied("Central token refresh is busy")
+                    time.sleep(0.025)
+            yield
+        finally:
+            os.close(fd)
+
+    def validate(self, sid, user_id):
+        try:
+            row = self.read_session(sid, user_id)
             token = json.loads(row["token"])
-            try:
-                if token.get("expires_at", 0) < time.time() + 30:
-                    refreshed = self.transport("token", {"grant_type": "refresh_token", "refresh_token": token["refresh_token"]})
-                    token.update(refreshed)
-                    token["expires_at"] = time.time() + int(refreshed["expires_in"])
-                    db.execute("UPDATE sessions SET token = ? WHERE id = ?", (json.dumps(token), sid))
-                    # Persist rotation even if the subsequent introspection is unavailable.
-                    db.commit()
-                    db.execute("BEGIN IMMEDIATE")
-                state = self.transport("token/introspect", {"token": token["access_token"]})
-                if state.get("active") is not True or state.get("sub") != row["subject"]:
-                    raise SessionDenied("Central session is inactive")
-                if state.get("client_id") != self.client_id or group_role(state.get("groups")) != row["role"]:
-                    raise SessionDenied("Membership changed; sign in again")
-            except SessionDenied:
-                raise
-            except Exception as exc:
-                raise SessionDenied("Central session could not be verified") from exc
-            return {"issuer": self.issuer, "subject": row["subject"], "user_id": row["user_id"], "role": row["role"]}
+            if token.get("expires_at", 0) < time.time() + 30:
+                with self.refresh_lock(sid):
+                    row = self.read_session(sid, user_id)
+                    token = json.loads(row["token"])
+                    if token.get("expires_at", 0) < time.time() + 30:
+                        token = self.refresh(sid, token)
+            state = self.transport("token/introspect", {"token": token["access_token"]})
+            if state.get("active") is not True or state.get("sub") != row["subject"]:
+                raise SessionDenied("Central session is inactive")
+            if state.get("client_id") != self.client_id or group_role(state.get("groups")) != row["role"]:
+                raise SessionDenied("Membership changed; sign in again")
+        except SessionDenied:
+            raise
+        except Exception as exc:
+            raise SessionDenied("Central session could not be verified") from exc
+        return {"issuer": self.issuer, "subject": row["subject"], "user_id": row["user_id"], "role": row["role"]}
+
+    def refresh(self, sid, token):
+        refreshed = self.transport("token", {"grant_type": "refresh_token", "refresh_token": token["refresh_token"]})
+        token.update(refreshed)
+        token["expires_at"] = time.time() + int(refreshed["expires_in"])
+        with self.connect() as db:
+            # Persist rotation before introspection, including provider outages.
+            db.execute("UPDATE sessions SET token = ? WHERE id = ?", (json.dumps(token), sid))
+        return token
 
 
 def install(app, data):

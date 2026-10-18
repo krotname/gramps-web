@@ -20,6 +20,7 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
       kind: {state: true},
       families: {state: true},
       audit: {state: true},
+      confirmedRevision: {state: true},
     }
   }
 
@@ -75,6 +76,7 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
     this.kind = 'person'
     this.families = []
     this.audit = []
+    this.confirmedRevision = null
   }
 
   updated(changed) {
@@ -96,6 +98,9 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
   }
 
   async refresh() {
+    this.confirmedRevision = null
+    this.record = null
+    this.form = {}
     try {
       this.status = await this.get('/api/master/status/')
       this.people = await this.get('/api/master/people/')
@@ -109,7 +114,7 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
   }
 
   async approveDemo() {
-    if (!this.renderRoot.querySelector('#synthetic-confirm')?.checked) {
+    if (this.confirmedRevision !== this.status.revision) {
       this.message =
         'Подтвердите, что все данные вымышлены и готовы к открытому показу.'
       return
@@ -124,6 +129,7 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
     } catch (e) {
       this.message = e.message
     } finally {
+      this.confirmedRevision = null
       this.busy = false
     }
   }
@@ -591,8 +597,16 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
               обновлением проверьте дерево и источники.
             </p>
             <label
-              ><input type="checkbox" id="synthetic-confirm" />Все данные
-              вымышлены и проверены для открытого показа</label
+              ><input
+                type="checkbox"
+                id="synthetic-confirm"
+                .checked=${this.confirmedRevision === this.status.revision}
+                @change=${e => {
+                  this.confirmedRevision = e.target.checked
+                    ? this.status.revision
+                    : null
+                }}
+              />Все данные вымышлены и проверены для открытого показа</label
             >
             <md-filled-button
               @click=${this.approveDemo}

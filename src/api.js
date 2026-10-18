@@ -1019,7 +1019,7 @@ export class Auth {
         'Content-Type': 'application/json',
       },
     })
-    if (resp.status === 403 || resp.status === 422) {
+    if (resp.status === 401 || resp.status === 403 || resp.status === 422) {
       doLogout()
       throw new Error('Failed refreshing token')
     }

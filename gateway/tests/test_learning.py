@@ -1,10 +1,13 @@
 import tempfile
 import unittest
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from gateway.learning import public_snapshot
 from gateway.learning_sessions import Sessions, SessionDenied
 from gateway.store import Store
-from gateway.tree import Conflict
+from gateway.tree import Conflict, Gedcom
 
 
 class SessionTest(unittest.TestCase):
@@ -44,8 +47,40 @@ class SessionTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             Sessions(self.manager.path, "https://other.example", "gramps", "test-only")
 
+    def test_introspections_do_not_serialize_requests_or_hold_sqlite_writer(self):
+        self.manager.validate(self.sid, "local-a")
+        barrier = threading.Barrier(4, timeout=3)
+        def parallel(endpoint, form):
+            self.assertEqual(endpoint, "token/introspect")
+            barrier.wait()
+            # Session creation is a write and must remain available during introspection.
+            self.manager.create("student-a", "local-a", 3,
+                                dict(access_token="new", refresh_token="new", expires_at=time.time()+300))
+            return self.state
+        self.manager.transport = parallel
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(lambda _: self.manager.validate(self.sid, "local-a"), range(4)))
+        self.assertEqual(len(results), 4)
+
+    def test_parallel_refresh_rotates_once(self):
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(lambda _: self.manager.validate(self.sid, "local-a"), range(4)))
+        self.assertEqual(sum(endpoint == "token" for endpoint, _ in self.calls), 1)
+
 
 class SnapshotTest(unittest.TestCase):
+    def test_nested_restrictions_and_referenced_notes_are_not_published(self):
+        tree = Gedcom(("0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n0 @I1@ INDI\n1 NAME Demo /Person/\n"
+                       "1 NOTE public note\n1 NOTE hidden inline\n2 RESN privacy\n"
+                       "1 NOTE @N1@\n1 NOTE @N2@\n1 SOUR @S1@\n2 RESN confidential\n"
+                       "1 SOUR @S2@\n0 @N1@ NOTE hidden reference\n1 RESN confidential\n"
+                       "0 @N2@ NOTE public reference\n0 @S1@ SOUR\n1 TITL Source one\n"
+                       "1 NOTE hidden source note\n2 RESN privacy\n0 @S2@ SOUR\n1 TITL Source two\n0 TRLR\n").encode())
+        result = public_snapshot(tree)
+        self.assertEqual(result["people"][0]["notes"], ["public note", "public reference"])
+        self.assertEqual(result["people"][0]["sources"], ["S2"])
+        self.assertEqual(result["sources"][0]["notes"], [])
+
     def test_edit_audit_conflict_and_explicit_snapshot_approval(self):
         with tempfile.TemporaryDirectory() as folder:
             store = Store(folder)
