@@ -439,12 +439,11 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
 
   render() {
     if (!this.appState.permissions?.canEditMaster) return html``
+    const title = this.appState.frontendConfig?.learningMode
+      ? 'Редактор учебного дерева'
+      : this._('Tree editor and family books')
     return html`<details>
-      <summary>
-        ${this.appState.frontendConfig?.learningMode
-          ? 'Редактор учебного дерева'
-          : this._('Tree editor and family books')}
-      </summary>
+      <summary>${title}</summary>
       <md-filled-button @click=${this.refresh} ?disabled=${this.busy}>
         ${this.appState.frontendConfig?.learningMode
           ? 'Обновить дерево после изменений другого участника'
