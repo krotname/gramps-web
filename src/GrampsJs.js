@@ -329,17 +329,24 @@ export class GrampsJs extends LitElement {
     return html`
       ${this.appState.frontendConfig?.learningMode
         ? html`<nav
-              aria-label="Проект"
+              aria-label=${this._('Learning project')}
               style="padding:12px 24px;background:#f6f1e8;display:flex;flex-wrap:wrap;gap:16px"
             >
-              <a href="https://semarhiv.ru/">Цифровая семейная память</a>
-              <a href="https://lms.semarhiv.ru/">Учебный кабинет</a>
-              <a href="/demo/">Открытый пример</a>
-              <a href="https://semarhiv.ru/programma/">Программа</a>
+              <a href="https://semarhiv.ru/"
+                >${this._('Digital family memory')}</a
+              >
+              <a href="https://lms.semarhiv.ru/"
+                >${this._('Learning portal')}</a
+              >
+              <a href="/demo/">${this._('Public example')}</a>
+              <a href="https://semarhiv.ru/programma/"
+                >${this._('Learning programme')}</a
+              >
             </nav>
             <p style="padding:0 24px">
-              Учебное дерево: используйте только вымышленные данные. Публичный
-              пример обновляет куратор.
+              ${this._(
+                'Learning tree: use fictional data only. The curator updates the public example.'
+              )}
             </p>`
         : html``}
       ${this.loadingState === LOADING_STATE_READY &&

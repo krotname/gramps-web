@@ -115,8 +115,9 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
 
   async approveDemo() {
     if (this.confirmedRevision !== this.status.revision) {
-      this.message =
-        'Подтвердите, что все данные вымышлены и готовы к открытому показу.'
+      this.message = this._(
+        'Confirm that all data is fictional and ready for public display.'
+      )
       return
     }
     this.busy = true
@@ -125,7 +126,9 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
         revision: this.status.revision,
         synthetic_only: true,
       })
-      this.message = 'Публичный снимок обновлён. Проверьте открытый пример.'
+      this.message = this._(
+        'Public snapshot updated. Check the public example.'
+      )
     } catch (e) {
       this.message = e.message
     } finally {
@@ -446,13 +449,13 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
   render() {
     if (!this.appState.permissions?.canEditMaster) return html``
     const title = this.appState.frontendConfig?.learningMode
-      ? 'Редактор учебного дерева'
+      ? this._('Learning tree editor')
       : this._('Tree editor and family books')
     return html`<details>
       <summary>${title}</summary>
       <md-filled-button @click=${this.refresh} ?disabled=${this.busy}>
         ${this.appState.frontendConfig?.learningMode
-          ? 'Обновить дерево после изменений другого участника'
+          ? this._('Refresh the tree after another participant makes changes')
           : this._('Refresh')}
       </md-filled-button>
       <p>
@@ -591,10 +594,11 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
         : html``}
       ${this.appState.frontendConfig?.learningMode &&
       this.appState.permissions.canCurateLearning
-        ? html`<section aria-label="Куратор">
+        ? html`<section aria-label=${this._('Curator')}>
             <p>
-              Публичный снимок не меняется при работе участников. Перед
-              обновлением проверьте дерево и источники.
+              ${this._(
+                'Participant edits do not change the public snapshot. Review the tree and sources before updating it.'
+              )}
             </p>
             <label
               ><input
@@ -606,15 +610,17 @@ export class GrampsjsMasterEditor extends GrampsjsAppStateMixin(LitElement) {
                     ? this.status.revision
                     : null
                 }}
-              />Все данные вымышлены и проверены для открытого показа</label
+              />${this._(
+                'All data is fictional and reviewed for public display'
+              )}</label
             >
             <md-filled-button
               @click=${this.approveDemo}
               ?disabled=${this.busy || this.status.projection !== 'ready'}
-              >Обновить публичный пример</md-filled-button
+              >${this._('Update public example')}</md-filled-button
             >
             <md-filled-button @click=${this.showAudit}
-              >Журнал изменений</md-filled-button
+              >${this._('Change history')}</md-filled-button
             >
             <ul>
               ${this.audit.map(
