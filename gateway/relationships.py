@@ -59,6 +59,16 @@ class FamilyGraph:
         for family in db.iter_families():
             parents = [family.get_father_handle(), family.get_mother_handle()]
             father, mother = parents
+            if not any(parents):
+                # A family can record siblings before either parent is named.
+                # Preserve that visible link without inventing a parent record.
+                siblings = [ref.ref for ref in family.get_child_ref_list()
+                            if ref.ref in self.people and
+                            int(ref.get_father_relation()) in (0, 6) and
+                            int(ref.get_mother_relation()) in (0, 6)]
+                for sibling in siblings:
+                    self.edges[sibling].extend((other, "B") for other in siblings
+                                               if other != sibling)
             if father in self.people and mother in self.people and father != mother:
                 self.edges[father].append((mother, "S"))
                 self.edges[mother].append((father, "S"))
@@ -144,6 +154,10 @@ class FamilyGraph:
         # family partners. The fallback also handles co-parents through a child.
         pieces, index = [], 0
         while index < len(kinds):
+            if kinds[index] == "B":
+                pieces.append(_sibling(self.gender(path[index + 1])))
+                index += 1
+                continue
             if kinds[index] == "S":
                 pieces.append(_word(self.gender(path[index + 1]),
                                     ("муж", "мужа"), ("жена", "жены"),

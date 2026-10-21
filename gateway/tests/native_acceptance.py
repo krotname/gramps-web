@@ -52,6 +52,7 @@ assert user["role"]==4
 store=Store(base/"master")
 data=FIXTURE.replace(b"1 NAME Anna", b"1 RESN privacy\r\n1 CENS\r\n2 DATE 1910\r\n2 PLAC Census place\r\n2 NOTE Census evidence\r\n1 NAME Anna").replace(b"2 DATE ABT 1900",b"2 DATE ABT 1900\r\n2 PLAC Original city")
 data=data.replace(b"1 NAME Anna",b"1 OBJE\r\n2 FILE synthetic.svg\r\n3 FORM svg\r\n2 TITL Synthetic portrait\r\n1 NAME Anna")
+data=data.replace(b"0 TRLR",b"0 @I3@ INDI\r\n1 NAME Sibling /Tree/\r\n1 FAMC @F2@\r\n0 @F2@ FAM\r\n1 CHIL @I2@\r\n1 CHIL @I3@\r\n0 TRLR")
 Path(config["MEDIA_BASE_DIR"]).mkdir(parents=True,exist_ok=True)
 (Path(config["MEDIA_BASE_DIR"])/"synthetic.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="blue"/></svg>')
 store.initialize(data)
@@ -60,7 +61,8 @@ seed=store.retry(callback)
 assert seed["projection"]=="ready",seed
 family,_=api.request("GET","/api/families/"+handle("F1", "Family"))
 assert family["child_ref_list"][0]["frel"]==["Unknown",6] or "Unknown" in str(family["child_ref_list"][0]["frel"]),family["child_ref_list"]
-for origin,other,label in [("I2","I1","родитель"),("I1","I2","ребёнок")]:
+for origin,other,label in [("I2","I1","родитель"),("I1","I2","ребёнок"),
+                           ("I2","I3","брат или сестра")]:
     relation,_=api.request("GET",f'/api/relations/{handle(origin)}/{handle(other)}?locale=ru&depth=20')
     assert relation["relationship_string"]==label,relation
 all_relations,_=api.request("GET",f'/api/relations/{handle("I2")}/{handle("I1")}/all?locale=ru&depth=20')
@@ -86,5 +88,5 @@ assert event["date"]["dateval"][:3]==[14,3,1899],event["date"]
 try:store.commit(before,"stale", [{"op":"person","xref":"I1","sex":"F"}],callback)
 except Conflict:pass
 else:raise AssertionError("Stale revision accepted")
-assert len(client.get("/api/people/",headers=auth).json)==2
-print(json.dumps({"native_api":"passed","people":2,"stable_parentage":"Unknown","date":"1899-03-14","projection":"ready","stale_revision":"rejected"}))
+assert len(client.get("/api/people/",headers=auth).json)==3
+print(json.dumps({"native_api":"passed","people":3,"stable_parentage":"Unknown","unnamed_parents":"siblings_preserved","date":"1899-03-14","projection":"ready","stale_revision":"rejected"}))

@@ -63,6 +63,16 @@ class Native:
 
 
 class TestRelationships(unittest.TestCase):
+    def test_siblings_without_named_parents(self):
+        db = DB([Person('child', 0), Person('father'), Person('uncle'),
+                 Person('cousin', 0)], [Family('father', '', 'child'),
+                                       Family('', '', 'father', 'uncle'),
+                                       Family('uncle', '', 'cousin')])
+        calc = NeutralCalculator(Native(), SimpleNamespace(language=['ru']))
+        self.assertEqual(calc.get_one_relationship(db, db.people['father'], db.people['uncle']), 'брат')
+        self.assertEqual(calc.get_one_relationship(db, db.people['child'], db.people['uncle']), 'брат отца')
+        self.assertEqual(calc.get_one_relationship(db, db.people['child'], db.people['cousin']), 'дочь брата отца')
+
     def setUp(self):
         self.db = DB([Person(p, 0 if p in {"eva", "mother", "grandmother", "sister", "wife"} else 1)
                       for p in ("eva", "father", "mother", "brother", "sister", "grandfather",
