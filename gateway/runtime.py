@@ -35,6 +35,8 @@ def create():
     for directory in ["media","reports","exports"]:
         (data/directory).mkdir(exist_ok=True)
     app=create_app(config,config_from_env=False)
+    from .relationships import install
+    install()
     tree_id=WebDbManager(name=config["TREE"]).dirname
     with app.app_context():
         user_db.create_all()

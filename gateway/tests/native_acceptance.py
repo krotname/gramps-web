@@ -30,6 +30,8 @@ config = dict(TREE="Synthetic gateway acceptance", SECRET_KEY="isolated-syntheti
     PERSISTENT_CACHE_CONFIG={"CACHE_TYPE":"NullCache"})
 config.update(USER_DB_URI="sqlite:///"+str(base/"users.sqlite"), SEARCH_INDEX_DB_URI="sqlite:///"+str(base/"search.sqlite"))
 app=create_app(config, config_from_env=False)
+from gateway.relationships import install
+install()
 tree_id=WebDbManager(name=config["TREE"]).dirname
 with app.app_context():
     user_db.create_all()
@@ -58,6 +60,14 @@ seed=store.retry(callback)
 assert seed["projection"]=="ready",seed
 family,_=api.request("GET","/api/families/"+handle("F1", "Family"))
 assert family["child_ref_list"][0]["frel"]==["Unknown",6] or "Unknown" in str(family["child_ref_list"][0]["frel"]),family["child_ref_list"]
+for origin,other,label in [("I2","I1","мать"),("I1","I2","сын")]:
+    relation,_=api.request("GET",f'/api/relations/{handle(origin)}/{handle(other)}?locale=ru&depth=20')
+    assert relation["relationship_string"]==label,relation
+all_relations,_=api.request("GET",f'/api/relations/{handle("I2")}/{handle("I1")}/all?locale=ru&depth=20')
+assert all_relations[0]["relationship_string"]=="мать",all_relations
+assert client.get(f'/api/relations/{handle("I2")}/{handle("I1")}?locale=ru').status_code==401
+family_after,_=api.request("GET","/api/families/"+handle("F1", "Family"))
+assert family_after==family
 before=store.revision
 result=store.commit(before,"fixture-edit",[{"op":"person","xref":"I1","name":"Anne /New/","birth":{"date":"1899-03-14","place":"New city"},"append_notes":["Synthetic acceptance note"],"append_sources":["Synthetic source record"]}],callback)
 assert result["projection"]=="ready",result
