@@ -60,11 +60,11 @@ seed=store.retry(callback)
 assert seed["projection"]=="ready",seed
 family,_=api.request("GET","/api/families/"+handle("F1", "Family"))
 assert family["child_ref_list"][0]["frel"]==["Unknown",6] or "Unknown" in str(family["child_ref_list"][0]["frel"]),family["child_ref_list"]
-for origin,other,label in [("I2","I1","мать"),("I1","I2","сын")]:
+for origin,other,label in [("I2","I1","родитель"),("I1","I2","ребёнок")]:
     relation,_=api.request("GET",f'/api/relations/{handle(origin)}/{handle(other)}?locale=ru&depth=20')
     assert relation["relationship_string"]==label,relation
 all_relations,_=api.request("GET",f'/api/relations/{handle("I2")}/{handle("I1")}/all?locale=ru&depth=20')
-assert all_relations[0]["relationship_string"]=="мать",all_relations
+assert all_relations[0]["relationship_string"]=="родитель",all_relations
 assert client.get(f'/api/relations/{handle("I2")}/{handle("I1")}?locale=ru').status_code==401
 family_after,_=api.request("GET","/api/families/"+handle("F1", "Family"))
 assert family_after==family
