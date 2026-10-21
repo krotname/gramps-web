@@ -28,6 +28,9 @@ def create():
         BASE_URL=os.environ["MASTER_ORIGIN"])
     for field in ["REQUEST_CACHE_CONFIG","PERSISTENT_CACHE_CONFIG"]:
         config[field]={"CACHE_TYPE":"FileSystemCache","CACHE_DIR":str(data/field.lower()),"CACHE_DEFAULT_TIMEOUT":0}
+    # Existing request entries can contain captions from the old calculator.
+    # Version only the request cache; the database and persistent caches stay put.
+    config["REQUEST_CACHE_CONFIG"]["CACHE_DIR"]=str(data/"request_cache_neutral_relationships_v1")
     # Imported Media may have no checksum, so a restored file keeps the same
     # cache key. Bound cached misses while retaining successful server thumbnails.
     config["THUMBNAIL_CACHE_CONFIG"]={"CACHE_TYPE":"FileSystemCache",
@@ -42,6 +45,8 @@ def create():
             OIDC_GROUP_OWNER="curators", OIDC_GROUP_EDITOR="students", OIDC_ROLE_CLAIM="groups",
             SESSION_COOKIE_SECURE=True, SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
     app=create_app(config,config_from_env=False)
+    from .relationships import install
+    install()
     tree_id=WebDbManager(name=config["TREE"]).dirname
     with app.app_context():
         user_db.create_all()
