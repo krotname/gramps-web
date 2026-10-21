@@ -28,6 +28,9 @@ def create():
         BASE_URL=os.environ["MASTER_ORIGIN"])
     for field in ["REQUEST_CACHE_CONFIG","PERSISTENT_CACHE_CONFIG"]:
         config[field]={"CACHE_TYPE":"FileSystemCache","CACHE_DIR":str(data/field.lower()),"CACHE_DEFAULT_TIMEOUT":0}
+    # Existing request entries can contain captions from the old calculator.
+    # Version only the request cache; the database and persistent caches stay put.
+    config["REQUEST_CACHE_CONFIG"]["CACHE_DIR"]=str(data/"request_cache_neutral_relationships_v1")
     # Imported Media may have no checksum, so a restored file keeps the same
     # cache key. Bound cached misses while retaining successful server thumbnails.
     config["THUMBNAIL_CACHE_CONFIG"]={"CACHE_TYPE":"FileSystemCache",
