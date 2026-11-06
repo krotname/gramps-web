@@ -1,7 +1,6 @@
 import {html, LitElement} from 'lit'
 import {mdiMapMarker} from '@mdi/js'
-
-const {maplibregl} = window
+import maplibregl from '../maplibre.js'
 
 class GrampsjsMapMarker extends LitElement {
   render() {

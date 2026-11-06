@@ -38,7 +38,7 @@ export default {
         swSrc: 'src/sw.js',
         swDest: path.join(outputDir, 'sw.js'),
         globDirectory: outputDir,
-        globPatterns: ['**/*.{html,js,css,webmanifest}'],
+        globPatterns: ['**/*.{html,js,mjs,css,webmanifest}'],
         globIgnores: [
           'polyfills/*.js',
           'legacy-*.js',
@@ -70,6 +70,10 @@ export default {
           dest: 'dist/webawesome-styles',
         },
         {src: './maplibre-gl.css', dest: 'dist/'},
+        {
+          src: 'node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs',
+          dest: 'dist/',
+        },
         {src: './global.css', dest: 'dist/'},
         {src: './tippy.css', dest: 'dist/'},
         {src: './src/config.js', dest: 'dist/'},
