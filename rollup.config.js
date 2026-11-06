@@ -8,6 +8,7 @@ import typescript from '@rollup/plugin-typescript'
 import copy from 'rollup-plugin-copy'
 import versionInjector from 'rollup-plugin-version-injector'
 import path from 'path'
+import {readFileSync} from 'node:fs'
 
 const API_URL = process.env.API_URL === undefined ? '' : process.env.API_URL
 
@@ -16,6 +17,10 @@ const BASE_DIR = process.env.BASE_DIR === undefined ? '' : process.env.BASE_DIR
 const developmentMode = process.env.ROLLUP_WATCH === 'true'
 
 const outputDir = 'dist'
+const maplibrePackagePath = './node_modules/maplibre-gl/package.json'
+const maplibreVersion = JSON.parse(
+  readFileSync(new URL(maplibrePackagePath, import.meta.url), 'utf8')
+).version
 
 // updateViaCache:'none' tells the browser (especially Firefox) to always
 // bypass its HTTP cache when checking for a new sw.js, so updates are
@@ -39,12 +44,19 @@ export default {
         swDest: path.join(outputDir, 'sw.js'),
         globDirectory: outputDir,
         globPatterns: ['**/*.{html,js,mjs,css,webmanifest}'],
+        additionalManifestEntries: [
+          {
+            url: `maplibre-gl-worker.mjs?v=${maplibreVersion}`,
+            revision: maplibreVersion,
+          },
+        ],
         globIgnores: [
           'polyfills/*.js',
           'legacy-*.js',
           'nomodule-*.js',
           'index.html',
           'config.js',
+          'maplibre-gl-worker.mjs',
         ],
       }),
     ],
