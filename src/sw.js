@@ -25,7 +25,9 @@ self.addEventListener('message', event => {
   }
 })
 
-precacheAndRoute(self.__WB_MANIFEST)
+precacheAndRoute(self.__WB_MANIFEST, {
+  ignoreURLParametersMatching: [/^utm_/, /^fbclid$/, /^v$/],
+})
 
 // Always fetch index.html fresh (cache:'no-cache'). Opaque redirects pass through.
 registerRoute(
