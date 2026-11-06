@@ -43,7 +43,7 @@ jobs:
         env:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          arc-cache oci-pull --image dmstraub/gramps-webapi@sha256:c11888a3cd4f8b4681bec6fba0d971df2b2310dbdd07fef1b4780e9e73b52fba --platform linux/amd64 --output "$RUNNER_TEMP/image" --crane crane
+          arc-cache oci-pull --image dmstraub/gramps-webapi@sha256:a4a5a809b671ea867b0982a0cff4f34be8b027cdc1f2fc406008ecc49f7cc19b --platform linux/amd64 --output "$RUNNER_TEMP/image" --crane crane
           python3 ops/compose_oci.py "$RUNNER_TEMP/image" dist gateway
       - name: Push immutable image
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository

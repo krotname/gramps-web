@@ -1,5 +1,5 @@
 import {html, css, LitElement} from 'lit'
-import 'maplibre-gl'
+import maplibregl from '../maplibre.js'
 import '@openhistoricalmap/maplibre-gl-dates'
 import * as Diplomat from '@americana/diplomat'
 
@@ -25,8 +25,6 @@ const defaultConfig = {
   mapBaseStyleLight: 'https://tiles.openfreemap.org/styles/liberty',
   mapBaseStyleDark: 'https://tiles.openfreemap.org/styles/dark',
 }
-
-const {maplibregl} = window
 
 export function mapResourceRequest(url, resourceType) {
   const u = new URL(url, location.origin)
